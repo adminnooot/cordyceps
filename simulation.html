@@ -230,25 +230,49 @@ function renderColony() {
         if (alpha <= 0) continue;
       }
 
-      // ── Concentric ring color (sine wave over radius) ───────────
-      const wave = Math.sin(r * 0.2);
-      let R, G, B;
-      if (wave > 0.3) {
-        // Vibrant Yellow #F1C40F
-        R = 241; G = 196; B = 15;
-      } else if (wave < -0.3) {
-        // Off-White #FDFEFE
-        R = 253; G = 254; B = 254;
-      } else {
-        // Soft blend between Off-White and Yellow
-        const t = (wave + 0.3) / 0.6;   // 0 → off-white, 1 → yellow
-        R = (253 + t * (241 - 253)) | 0;
-        G = (254 + t * (196 - 254)) | 0;
-        B = (254 + t * ( 15 - 254)) | 0;
+      // ── Radial opacity variation: slightly translucent center,
+      //    full opacity in mid-zone, fades at edge (handled by smoothstep above)
+      const normR = r / Math.max(targetR, 1);
+      if (normR < 0.15) {
+        // Center: slightly less opaque
+        alpha *= 0.75 + normR * (1 / 0.15) * 0.25;
       }
 
-      // ── Micro-texture grain (simulates mycelium filaments) ──────
-      const grain = 0.7 + Math.random() * 0.3;
+      // ── Concentric ring color: perturb radius with 2D noise for organic wobble
+      const perturbedDist = r + Noise.noise2d(px * 0.015, py * 0.015) * 25;
+      const wave = Math.sin(perturbedDist * 0.04);
+
+      // Map wave to predominantly golden-yellow palette with subtle amber bands
+      // wave range is [-1, 1]; we bias heavily toward yellow
+      let R, G, B;
+
+      // White/cream fringe in outer 20% of colony radius
+      const fringeStart = 0.80;
+      if (normR >= fringeStart) {
+        // Lerp from yellow toward cream as we approach the edge
+        const ft = (normR - fringeStart) / (1.0 - fringeStart);  // 0..1
+        const ft2 = ft * ft;  // ease in
+        // Yellow base: #F1C40F  →  cream: #F5F0E0
+        const baseR = 241, baseG = 196, baseB = 15;
+        const creamR = 245, creamG = 240, creamB = 224;
+        R = (baseR + ft2 * (creamR - baseR)) | 0;
+        G = (baseG + ft2 * (creamG - baseG)) | 0;
+        B = (baseB + ft2 * (creamB - baseB)) | 0;
+      } else {
+        // Interior: golden yellow dominant with subtle amber concentric bands
+        // wave > 0  → rich yellow #F1C40F
+        // wave < 0  → slightly darker amber #C8960A  (only a subtle shift)
+        const bandT = (wave + 1.0) * 0.5;   // remap [-1,1] → [0,1]
+        // Clamp so amber is subtle — minimum is 0.3 even at wave = -1
+        const t = 0.30 + bandT * 0.70;      // range [0.30, 1.00]
+        // t=1 → #F1C40F (yellow), t=0 → #C8960A (amber)
+        R = (200 + t * (241 - 200)) | 0;    // 200..241
+        G = (150 + t * (196 - 150)) | 0;    // 150..196
+        B = ( 10 + t * ( 15 -  10)) | 0;    //  10..15
+      }
+
+      // ── Micro-texture grain (subtle filament hint) ──────────────
+      const grain = 0.85 + Math.random() * 0.15;
       alpha *= grain;
 
       const i4 = (py * W + px) * 4;
