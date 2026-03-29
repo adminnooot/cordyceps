@@ -46,9 +46,9 @@ This simulation is modeled after *Cordyceps militaris* mycelium growing on agar 
 
 | Variable | Default | Effect |
 |---|---|---|
-| `growthSpeed` | `0.15` | Pixels added to colony radius per frame |
-| `fuzziness` | `0.28` | Amplitude of Perlin noise edge irregularity (0 = perfect circle) |
-| `density` | `22` | Soft blobs drawn per frame — the main performance knob |
+| `growthSpeed` | `0.18` | Pixels added to colony radius per frame |
+| `fuzziness` | `0.30` | Amplitude of noise edge irregularity (0 = perfect circle) |
+| `density` | `4` | Wispy edge blobs drawn every other frame (1–12) |
 | `colorIntensity` | `1.0` | Multiplier for orange/amber saturation in core |
 
 ---
@@ -57,21 +57,20 @@ This simulation is modeled after *Cordyceps militaris* mycelium growing on agar 
 
 ```
 setup()
-  └─ createCanvas → initSimulation()
-        └─ draw initial inoculation dot, set colonyRadius = 6
+  └─ createCanvas → init()
+        └─ draw inoculation dot, set colonyRadius = 6
 
-draw() [every frame]
+draw() [every frame — 3–9 draw calls total]
   ├─ colonyRadius += growthSpeed
-  ├─ for each of `density` puffs:
-  │     ├─ pick random angle
-  │     ├─ compute noise-displaced edge radius
-  │     ├─ sample rPos from edge / mid / core zone
-  │     ├─ map distance → HSB color + alpha + size
-  │     └─ draw inner ellipse + soft outer halo
-  └─ every 4th frame: reinforce core with 6 extra blobs
+  ├─ compute 64-point noisy polygon (two noise octaves)
+  ├─ fill entire colony shape with one radial gradient (1 draw call)
+  │     orange core → cream mid → white edge, alpha ~0.015
+  │     ↳ pixels accumulate: centre gets dense, frontier stays wispy
+  ├─ every 2nd frame: N edge-texture blobs at frontier (N = density)
+  └─ every 8th frame: 2 amber blobs to deepen core colour
 ```
 
-The canvas never clears — drawn blobs accumulate as pixels, building colony density over time. No objects are stored between frames.
+The canvas never clears — the single noisy circle fill accumulates as pixels each frame. After ~200 frames the centre becomes nearly opaque while the frontier remains translucent. No particle arrays, no hypha objects — just one growing shape per frame.
 
 ---
 

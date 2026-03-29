@@ -89,7 +89,7 @@
     <div id="control-panel">
         <div class="row"><div class="lab"><span>Growth Speed</span><span id="v-growthSpeed">0.15</span></div><input id="s-growthSpeed" type="range" min="0.02" max="0.60" step="0.01" value="0.15"></div>
         <div class="row"><div class="lab"><span>Edge Fuzziness</span><span id="v-fuzziness">0.28</span></div><input id="s-fuzziness" type="range" min="0.00" max="0.70" step="0.01" value="0.28"></div>
-        <div class="row"><div class="lab"><span>Puff Density</span><span id="v-density">22</span></div><input id="s-density" type="range" min="5" max="60" step="1" value="22"></div>
+        <div class="row"><div class="lab"><span>Edge Texture</span><span id="v-density">4</span></div><input id="s-density" type="range" min="1" max="12" step="1" value="4"></div>
         <div class="row"><div class="lab"><span>Orange Intensity</span><span id="v-colorIntensity">1.00</span></div><input id="s-colorIntensity" type="range" min="0.0" max="2.0" step="0.05" value="1.0"></div>
         <button id="restart-btn">↺ Restart</button>
     </div>
@@ -106,11 +106,13 @@
     const FRAME_MS = 1000 / 30;   // target 30 fps — halves CPU vs 60 fps
 
     const params = {
-        growthSpeed:    0.15,
-        fuzziness:      0.28,
-        density:        22,
+        growthSpeed:    0.18,
+        fuzziness:      0.30,
+        density:        4,
         colorIntensity: 1.0,
     };
+
+    const SEGS = 64; // polygon resolution for noisy edge
 
     // ── Minimal smooth 2-D value noise (no external library) ─────────────────
     function hash2D(x, y) {
@@ -173,78 +175,75 @@
     // ── One simulation step ───────────────────────────────────────────────────
     function step() {
         tick++;
-        const T  = tick * 0.004;
+        const T  = tick * 0.0025;
         const cr = colonyRadius;
         const maxR = Math.min(cv.width, cv.height) * 0.47;
         if (cr < maxR) colonyRadius += params.growthSpeed;
 
-        const n  = Math.max(1, params.density | 0);
-        const ci = params.colorIntensity;
         const fz = params.fuzziness;
+        const ci = params.colorIntensity;
 
-        for (let i = 0; i < n; i++) {
-            const ang = Math.random() * Math.PI * 2;
+        // Compute noisy edge — 64-point polygon (two octaves for organic shape)
+        const pts = new Float32Array(SEGS * 2);
+        for (let i = 0; i < SEGS; i++) {
+            const ang = (i / SEGS) * Math.PI * 2;
             const ca  = Math.cos(ang), sa = Math.sin(ang);
-
-            // Noise-deformed frontier radius
-            const nv    = noise(ca * 3.0 + T * 0.6, sa * 3.0 + T * 0.6);
-            const edgeR = cr * (1.0 + (nv - 0.5) * fz);
-
-            // Zone distribution: 55 % edge, 25 % mid, 20 % core
-            let rPos;
-            const zone = Math.random();
-            if (zone < 0.55)      rPos = edgeR * (0.78 + Math.random() * 0.28);
-            else if (zone < 0.80) rPos = edgeR * (0.45 + Math.random() * 0.33);
-            else                  rPos = edgeR *  Math.random() * 0.45;
-
-            const x  = cx + ca * rPos;
-            const y  = cy + sa * rPos;
-            const dr = Math.min(rPos / Math.max(cr, 1), 1.3);
-
-            let h, s, l, a, sz;
-
-            if (dr < 0.35) {
-                // Core: warm orange-amber
-                h  = 20 + Math.random() * 8;
-                s  = Math.min(100, (55 + Math.random() * 20) * ci);
-                l  = 48 + Math.random() * 12;
-                a  = 0.07 + Math.random() * 0.13;
-                sz = 7   + Math.random() * 15;
-            } else if (dr < 0.68) {
-                // Mid: cream-orange fading to off-white
-                h  = 27 + Math.random() * 11;
-                s  = Math.min(100, (30 + Math.random() * 62) * ci);
-                l  = 72 + Math.random() * 15;
-                a  = 0.04 + Math.random() * 0.07;
-                sz = 5   + Math.random() * 11;
-            } else if (dr < 0.88) {
-                // Outer: mostly white, warm tinge
-                h  = 33 + Math.random() * 17;
-                s  = Math.min(100, (3 + Math.random() * 9) * ci);
-                l  = 87 + Math.random() * 10;
-                a  = 0.02 + Math.random() * 0.05;
-                sz = 4   + Math.random() * 9;
-            } else {
-                // Wispy edge: nearly transparent
-                h  = 38 + Math.random() * 20;
-                s  = Math.min(100, (1 + Math.random() * 5) * ci);
-                l  = 93 + Math.random() * 7;
-                a  = 0.01 + Math.random() * 0.03;
-                sz = 3   + Math.random() * 7;
-            }
-
-            puff(x, y, sz,        h, s,        l, a);         // inner blob
-            puff(x, y, sz * 2.5,  h, s * 0.35, l, a * 0.28); // soft outer halo
+            const nv  = noise(ca * 2.8 + T * 0.5, sa * 2.8 + T * 0.4) * 0.65
+                      + noise(ca * 6.0 + T * 1.2, sa * 6.0 + T * 1.1) * 0.35;
+            const r   = cr * (1.0 + (nv - 0.5) * fz);
+            pts[i * 2]     = cx + ca * r;
+            pts[i * 2 + 1] = cy + sa * r;
         }
 
-        // Reinforce center density every 4 ticks
-        if (tick % 4 === 0) {
-            for (let i = 0; i < 6; i++) {
+        // ── Main fill: one noisy circle, accumulates density naturally over time
+        const edgeR = cr * (1.0 + fz * 0.5);
+        const grd   = ctx.createRadialGradient(cx, cy, 0, cx, cy, edgeR);
+        grd.addColorStop(0,    `hsla(22, ${Math.min(100, 62 * ci)}%, 50%, 0.018)`);
+        grd.addColorStop(0.40, `hsla(27, ${Math.min(100, 28 * ci)}%, 68%, 0.014)`);
+        grd.addColorStop(0.75, `hsla(33, ${Math.min(100,  7 * ci)}%, 88%, 0.009)`);
+        grd.addColorStop(1.0,  `hsla(37, ${Math.min(100,  2 * ci)}%, 95%, 0.003)`);
+        ctx.beginPath();
+        ctx.moveTo(pts[0], pts[1]);
+        for (let i = 1; i < SEGS; i++) ctx.lineTo(pts[i * 2], pts[i * 2 + 1]);
+        ctx.closePath();
+        ctx.fillStyle = grd;
+        ctx.fill();
+
+        // ── Edge texture: sparse wispy blobs at frontier (every other frame) ──
+        if (tick % 2 === 0) {
+            const n  = Math.max(1, params.density | 0);
+            const ws = Math.min(100, 5 * ci);
+            for (let i = 0; i < n; i++) {
+                const idx = (Math.random() * SEGS | 0);
+                const ex  = pts[idx * 2], ey = pts[idx * 2 + 1];
+                const bx  = ex + (Math.random() - 0.5) * cr * 0.07;
+                const by  = ey + (Math.random() - 0.5) * cr * 0.07;
+                const sz  = 3 + Math.random() * 7;
+                const g   = ctx.createRadialGradient(bx, by, 0, bx, by, sz);
+                g.addColorStop(0, `hsla(34, ${ws}%, 93%, 0.06)`);
+                g.addColorStop(1, `hsla(34, ${ws}%, 93%, 0)`);
+                ctx.beginPath();
+                ctx.arc(bx, by, sz, 0, Math.PI * 2);
+                ctx.fillStyle = g;
+                ctx.fill();
+            }
+        }
+
+        // ── Core reinforcement every 8 ticks — deepens warm orange centre ─────
+        if (tick % 8 === 0) {
+            for (let i = 0; i < 2; i++) {
                 const ang = Math.random() * Math.PI * 2;
-                const r   = Math.random() * cr * 0.3;
-                puff(cx + Math.cos(ang) * r, cy + Math.sin(ang) * r,
-                     4 + Math.random() * 10, 23, Math.min(100, 65 * ci), 52,
-                     0.03 + Math.random() * 0.09);
+                const r   = Math.random() * cr * 0.22;
+                const bx  = cx + Math.cos(ang) * r;
+                const by  = cy + Math.sin(ang) * r;
+                const sz  = 6 + Math.random() * 14;
+                const g   = ctx.createRadialGradient(bx, by, 0, bx, by, sz);
+                g.addColorStop(0, `hsla(22, ${Math.min(100, 68 * ci)}%, 50%, 0.04)`);
+                g.addColorStop(1, `hsla(22, ${Math.min(100, 68 * ci)}%, 50%, 0)`);
+                ctx.beginPath();
+                ctx.arc(bx, by, sz, 0, Math.PI * 2);
+                ctx.fillStyle = g;
+                ctx.fill();
             }
         }
     }
