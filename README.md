@@ -1,30 +1,39 @@
-# Cordyceps Simulation
+# cordyceps
 
-This repository contains a p5.js simulation of the Cordyceps militaris petri dish. Below are instructions and live links to run the simulation and adjust parameters:
+Live petri-dish style **Cordyceps militaris** colony simulation (p5.js).
 
-## Instructions
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/adminnooot/cordyceps.git
-   ```
-2. Open `index.html` in a web browser.
-3. Use the sliders to adjust parameters:
-   - **Orange Start Delay**: Adjust the delay before the orange transition starts.
-   - **Ramp Rate**: Set the rate at which the transition ramps up.
-   - **Max**: Define the maximum extent the orange color can reach.
-   - **Center Bias**: Influence where the orange transition is centered in the petri dish.
-   - **Inoculum Radius**: Control the size of the initial inoculum.
-   - **Speed**: Adjust the speed of the growth.
-   - **Tips**: Use to get advice on the best settings.
-   - **Branchiness**: Change the level of branchiness in the growth.
-   - **Cottony Thickness**: Set the thickness of the cottony growth.
-   - **Ring Tendency**: Control how likely rings are to form in the growth.
-   - **Light**: Adjust the intensity of light affecting growth.
-   - **Orange Hue**: Change the hue of the orange transition.
-   - **Plate Radius**: Set the radius of the petri dish plate.
-4. Restart/toggle the UI to see different growth patterns.
+## Run it (GitHub Pages)
+1. Go to **Settings → Pages**
+2. **Deploy from a branch**
+3. Branch: **main**
+4. Folder: **/(root)**
 
-## Live Simulation Link
-You can find the live version of the simulation here: [Live Simulation](http://your-live-simulation-link.com)
+Then the site URLs will be:
 
-Enjoy experimenting with the Cordyceps simulation!
+- Home: `https://adminnooot.github.io/cordyceps/`
+- Simulation: `https://adminnooot.github.io/cordyceps/cordyceps/`
+
+## Run it locally
+Just open:
+
+- `cordyceps/index.html`
+
+in your browser (double-click, or drag into a tab).
+
+## Controls
+Orange transition:
+- **Light (enables orange):** master knob; set to `0` for all-white colony
+- **Orange start (delay):** how “mature” it must get before turning orange
+- **Orange ramp (rate):** how fast the orange appears after it starts
+- **Orange max:** cap for how orange it can get
+- **Orange center bias:** `1.0` = center oranges first, `0.0` = edge oranges first
+- **Orange hue:** adjust the orange tone
+
+Growth:
+- **Inoculum radius:** size of the initial center plug
+- **Tips (max), Initial tips:** density/complexity
+- **Branchiness:** branching frequency
+- **Cottony (thickness):** mat accumulation strength
+- **Ring tendency:** concentric zoning strength
+- **Speed:** sim speed
+- **Restart:** re-seed the colony
