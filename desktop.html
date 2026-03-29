@@ -89,8 +89,8 @@
     <button id="toggle-btn">⚙ Controls</button>
     <div id="control-panel">
         <div class="row"><div class="lab"><span>Speed</span><span id="v-speedMult">0.80</span></div><input id="s-speedMult" type="range" min="0.2" max="3.0" step="0.1" value="0.8"></div>
-        <div class="row"><div class="lab"><span>Max Hyphae</span><span id="v-maxHyphae">8000</span></div><input id="s-maxHyphae" type="range" min="1000" max="15000" step="500" value="8000"></div>
-        <div class="row"><div class="lab"><span>Spawn Count</span><span id="v-spawnCount">140</span></div><input id="s-spawnCount" type="range" min="20" max="300" step="10" value="140"></div>
+        <div class="row"><div class="lab"><span>Max Hyphae</span><span id="v-maxHyphae">3000</span></div><input id="s-maxHyphae" type="range" min="500" max="8000" step="500" value="3000"></div>
+        <div class="row"><div class="lab"><span>Spawn Count</span><span id="v-spawnCount">80</span></div><input id="s-spawnCount" type="range" min="10" max="200" step="10" value="80"></div>
         <div class="row"><div class="lab"><span>Max Generations</span><span id="v-maxGen">9</span></div><input id="s-maxGen" type="range" min="2" max="15" step="1" value="9"></div>
         <div class="row"><div class="lab"><span>Taper Rate</span><span id="v-taperRate">0.9990</span></div><input id="s-taperRate" type="range" min="0.990" max="0.9999" step="0.0001" value="0.999"></div>
         <div class="row"><div class="lab"><span>Wander Scale</span><span id="v-wanderScale">0.30</span></div><input id="s-wanderScale" type="range" min="0.05" max="0.80" step="0.01" value="0.30"></div>
@@ -105,14 +105,16 @@
 
     let params = {
         speedMult:       0.8,
-        maxHyphae:       8000,
-        spawnCount:      140,
+        maxHyphae:       3000,
+        spawnCount:      80,
         maxGen:          9,
         taperRate:       0.999,
         wanderScale:     0.30,
         branchProb:      0.12,
         orangeIntensity: 1.0,
     };
+
+    let cachedMaxD = 1; // pre-computed max distance for color blend, set in initSimulation
 
     // Toggle control panel
     const toggleBtn = document.getElementById('toggle-btn');
@@ -142,49 +144,57 @@
 
     class Hypha {
         constructor(x, y, angle, w, generation = 0) {
-            this.x          = x;
-            this.y          = y;
-            this.prevX      = x;
-            this.prevY      = y;
-            this.angle      = angle;
-            this.w          = w;
-            this.generation = generation;
-            this.speed      = random(0.7, 1.4) * Math.pow(0.85, generation) * params.speedMult;
-            this.stopped    = false;
+            this.x           = x;
+            this.y           = y;
+            this.prevX       = x;
+            this.prevY       = y;
+            this.angle       = angle;
+            this.w           = w;
+            this.generation  = generation;
+            this.speed       = random(0.7, 1.4) * Math.pow(0.85, generation) * params.speedMult;
+            this.stopped     = false;
             this.noiseOffset = random(1000);
-            this.taperRate  = params.taperRate - generation * 0.0002;
+            this.taperRate   = params.taperRate - generation * 0.0002;
+            this.noiseFrame  = random() < 0.5; // stagger noise updates across the colony
+            this.lastNoiseAdj = 0; // cached angle adjustment from last noise frame
         }
 
         update() {
             this.prevX = this.x;
             this.prevY = this.y;
 
-            // Perlin noise wander — higher than typical mycelium for cottony Cordyceps look
-            let noiseVal = noise(this.noiseOffset) - 0.5;
-            this.noiseOffset += 0.012;
-            this.angle += noiseVal * params.wanderScale;
+            // Only run expensive noise + outward-bias calc every other update
+            this.noiseFrame = !this.noiseFrame;
+            if (this.noiseFrame) {
+                let noiseVal = noise(this.noiseOffset) - 0.5;
+                this.noiseOffset += 0.012;
+                this.lastNoise = noiseVal * params.wanderScale;
+                this.angle += this.lastNoise;
 
-            // Weak outward bias from origin (weaker than generic mycelium → more tangled/cottony)
-            let outwardAngle = atan2(this.y - originY, this.x - originX);
-            let angleDiff = outwardAngle - this.angle;
-            while (angleDiff >  PI) angleDiff -= TWO_PI;
-            while (angleDiff < -PI) angleDiff += TWO_PI;
-            this.angle += angleDiff * 0.025;
+                // Weak outward bias — use Math.atan2 directly (skip p5 wrapper overhead)
+                let outwardAngle = Math.atan2(this.y - originY, this.x - originX);
+                let angleDiff = outwardAngle - this.angle;
+                if (angleDiff >  Math.PI) angleDiff -= 2 * Math.PI;
+                if (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
+                this.angle += angleDiff * 0.025;
+            }
 
-            // Move
-            this.x += cos(this.angle) * this.speed;
-            this.y += sin(this.angle) * this.speed;
+            // Cache cos/sin for the move step
+            let ca = Math.cos(this.angle);
+            let sa = Math.sin(this.angle);
+            this.x += ca * this.speed;
+            this.y += sa * this.speed;
 
             // Taper
             this.w *= this.taperRate;
 
-            // Stop conditions
-            if (this.w < 0.1) { this.stopped = true; return; }
+            // Stop conditions (slightly more aggressive threshold)
+            if (this.w < 0.12) { this.stopped = true; return; }
             if (this.x < -10 || this.x > width + 10 || this.y < -10 || this.y > height + 10) {
                 this.stopped = true; return;
             }
 
-            // Probabilistic branching — higher probability for dense cottony growth
+            // Probabilistic branching
             if (hyphae.length < params.maxHyphae && this.generation < params.maxGen) {
                 let branchP = params.branchProb * Math.pow(0.72, this.generation);
                 if (random() < branchP) {
@@ -195,30 +205,25 @@
         }
 
         draw() {
-            let d = Math.sqrt((this.x - originX) * (this.x - originX) + (this.y - originY) * (this.y - originY));
-            let maxD = Math.sqrt(width * width + height * height) * 0.4;
-            let centerBlend = constrain(1.0 - d / maxD, 0, 1);
+            let dx = this.x - originX;
+            let dy = this.y - originY;
+            // Avoid sqrt by using cachedMaxD (pre-computed, avoids per-call Math.sqrt)
+            let cb = 1.0 - Math.sqrt(dx * dx + dy * dy) / cachedMaxD;
+            if (cb < 0) cb = 0; else if (cb > 1) cb = 1;
+            let cb2 = cb * cb;
 
-            // Hue: 38 (cream/off-white) at edges → 25 (warm orange) at center
-            let h = lerp(38, 25, centerBlend * centerBlend);
-            // Saturation: 8 (almost white) at edges → 70 (warm orange) at center
-            let s = lerp(8, 70, centerBlend * centerBlend) * params.orangeIntensity;
-            // Brightness: always high, slightly higher at center
-            let b = lerp(90, 100, centerBlend);
-
-            // Alpha: thicker strokes are more opaque; center is more opaque than edges
-            let alpha = (3 + 140 * ((this.w - 0.1) / 3.4)) * lerp(0.6, 1.0, centerBlend);
+            // Inline lerp to avoid p5 lerp() call overhead
+            let h = 38 - 13 * cb2;                                 // lerp(38, 25, cb2)
+            let s = (8 + 62 * cb2) * params.orangeIntensity;       // lerp(8, 70, cb2)
+            let b = 90 + 10 * cb;                                   // lerp(90, 100, cb)
+            // Slightly boosted alpha (compensates for removed glow pass)
+            let alpha = (3 + 140 * ((this.w - 0.1) * 0.2941)) * (0.6 + 0.4 * cb) * 1.1;
+            if (alpha > 255) alpha = 255;
 
             stroke(h, s, b, alpha);
             strokeWeight(this.w);
             line(this.prevX, this.prevY, this.x, this.y);
-
-            // Bright core glow on thicker hyphae near center — gives depth / aerial quality
-            if (this.w > 1.5 && centerBlend > 0.3) {
-                stroke(30, 60, 100, alpha * 0.4);
-                strokeWeight(this.w * 0.25);
-                line(this.prevX, this.prevY, this.x, this.y);
-            }
+            // Glow double-draw pass removed — halves draw calls for center hyphae
         }
     }
 
@@ -227,6 +232,8 @@
         let canvas = createCanvas(parent.clientWidth, parent.clientHeight);
         canvas.parent('canvas-parent');
         colorMode(HSB, 360, 100, 100, 255);
+        frameRate(30);  // 30fps halves CPU vs default 60fps
+        noSmooth();     // disable anti-aliasing to reduce GPU load
         initSimulation();
     }
 
@@ -235,23 +242,30 @@
         hyphae  = [];
         originX = width  * 0.5;
         originY = height * 0.5;
+        // Cache max distance once instead of recomputing every draw() call per hypha
+        cachedMaxD = Math.sqrt(width * width + height * height) * 0.4;
 
         let count = params.spawnCount;
         for (let i = 0; i < count; i++) {
-            let angle = (TWO_PI / count) * i + random(-0.15, 0.15);
+            let angle = (2 * Math.PI / count) * i + random(-0.15, 0.15);
             hyphae.push(new Hypha(originX, originY, angle, random(1.5, 3.5)));
         }
     }
 
     function draw() {
+        // Frame-budget loop: bail out if we've spent more than ~12ms this frame,
+        // so remaining hyphae are drawn next frame. Prevents jank on slow hardware.
+        const t0 = performance.now();
         for (let i = hyphae.length - 1; i >= 0; i--) {
-            let h = hyphae[i];
+            const h = hyphae[i];
             h.update();
             h.draw();
             if (h.stopped) {
                 hyphae[i] = hyphae[hyphae.length - 1];
                 hyphae.pop();
             }
+            // Check time budget every 20 iterations to keep overhead low
+            if ((i & 19) === 0 && performance.now() - t0 > 12) break;
         }
     }
 
