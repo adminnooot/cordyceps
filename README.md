@@ -83,7 +83,7 @@ The canvas never clears — the single noisy circle fill accumulates as pixels e
 | `index.html` | Device detection — auto-redirects to `desktop.html` or `mobile.html` |
 | `desktop.html` | Full simulation with toggleable ⚙ Controls panel |
 | `mobile.html` | Mobile-optimized — same simulation, no control panel |
-| `cordyceps/index.html` | Full simulation (same as desktop, preserves `/cordyceps/` URL) |
+| `cordyceps/index.html` | Legacy redirect — auto-redirects to `desktop.html` or `mobile.html` (preserves old bookmarks) |
 
 ---
 
