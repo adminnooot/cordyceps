@@ -1,6 +1,6 @@
 # 🍄 Cordyceps militaris Growth Simulation
 
-A generative art piece simulating the cottony, puffy expansion of *Cordyceps militaris* mycelium growing on agar — a soft, cloud-like circle that slowly expands outward from a single inoculation point, dense and orange-amber at the core, wispy and translucent at the growing edge. Built with [p5.js](https://p5js.org/).
+A generative art piece simulating the cottony, puffy expansion of *Cordyceps militaris* mycelium growing on agar — a soft, cloud-like circle that slowly expands outward from a single inoculation point, dense and orange-amber at the core, wispy and translucent at the growing edge. Pure vanilla Canvas 2D — no libraries required.
 
 ## 🔬 Live Preview
 
@@ -16,7 +16,7 @@ A generative art piece simulating the cottony, puffy expansion of *Cordyceps mil
 
 ## What It Does
 
-A single colony radius slowly expands from the center of the canvas. Each frame a small number of soft, semi-transparent blobs ("puffs") are scattered across the colony — mostly at the growing edge, with a few reinforcing the interior. Because the canvas never clears, these blobs accumulate over time, naturally building up:
+A single colony radius slowly expands from the center of the canvas. Each frame many soft, semi-transparent blobs ("puffs") are scattered across the colony — mostly at the growing edge (cotton tufts + wispy tendrils), with fine stipple dots building interior depth. Because the canvas never clears, these blobs accumulate over time, naturally building up:
 
 - **Dense, opaque center** — many frames of puffs have landed here since the colony started
 - **Rich orange-amber pigmentation** in the core (matching how real *C. militaris* develops carotenoid pigments)
@@ -47,8 +47,8 @@ This simulation is modeled after *Cordyceps militaris* mycelium growing on agar 
 | Variable | Default | Effect |
 |---|---|---|
 | `growthSpeed` | `0.18` | Pixels added to colony radius per frame |
-| `fuzziness` | `0.30` | Amplitude of noise edge irregularity (0 = perfect circle) |
-| `density` | `4` | Wispy edge blobs drawn every other frame (1–12) |
+| `fuzziness` | `0.42` | Amplitude of noise edge irregularity (0 = perfect circle) |
+| `density` | `6` | Cotton blobs drawn per frame — higher = fluffier, lower = lighter CPU |
 | `colorIntensity` | `1.0` | Multiplier for orange/amber saturation in core |
 
 ---
@@ -60,17 +60,19 @@ setup()
   └─ createCanvas → init()
         └─ draw inoculation dot, set colonyRadius = 6
 
-draw() [every frame — 3–9 draw calls total]
+draw() [every frame — ~73 draw calls with default density=6, capped at 30 fps]
   ├─ colonyRadius += growthSpeed
-  ├─ compute 64-point noisy polygon (two noise octaves)
+  ├─ compute 80-point noisy polygon (three noise octaves, 1.8× amplitude)
   ├─ fill entire colony shape with one radial gradient (1 draw call)
-  │     orange core → cream mid → white edge, alpha ~0.015
-  │     ↳ pixels accumulate: centre gets dense, frontier stays wispy
-  ├─ every 2nd frame: N edge-texture blobs at frontier (N = density)
-  └─ every 8th frame: 2 amber blobs to deepen core colour
+  │     deep orange core → amber → warm cream → near-white edge, alpha ~0.016
+  │     ↳ pixels accumulate: centre gets dense & opaque, frontier stays wispy
+  ├─ density×5 cotton tufts at frontier — overlapping soft blobs, size 2–15 px
+  ├─ density×3 wispy tendrils — tiny bright tips pushed just beyond the edge
+  ├─ density×4 interior stipple — fine dots scattered throughout colony
+  └─ every 4th frame: 3 amber blobs to deepen core colour
 ```
 
-The canvas never clears — the single noisy circle fill accumulates as pixels each frame. After ~200 frames the centre becomes nearly opaque while the frontier remains translucent. No particle arrays, no hypha objects — just one growing shape per frame.
+The canvas never clears — the single noisy circle fill accumulates as pixels each frame. The cotton tufts and wisps build the ragged, fluffy texture at the growing edge. No particle arrays, no hypha objects — just one growing shape plus scattered soft blobs per frame.
 
 ---
 
@@ -87,10 +89,9 @@ The canvas never clears — the single noisy circle fill accumulates as pixels e
 
 ## Tech
 
-- [p5.js](https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js) `1.4.0` — loaded from CDN, no npm required
-- Vanilla JS, single HTML files
-- HSB color mode for natural distance-based color blending
-- No build tools, no framework
+- Vanilla JS + HTML5 Canvas 2D — no libraries, no build tools
+- HSL color mode for natural distance-based color blending
+- Single HTML files — open directly in any browser
 
 ---
 

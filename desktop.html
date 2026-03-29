@@ -88,8 +88,8 @@
     <button id="toggle-btn">⚙ Controls</button>
     <div id="control-panel">
         <div class="row"><div class="lab"><span>Growth Speed</span><span id="v-growthSpeed">0.15</span></div><input id="s-growthSpeed" type="range" min="0.02" max="0.60" step="0.01" value="0.15"></div>
-        <div class="row"><div class="lab"><span>Edge Fuzziness</span><span id="v-fuzziness">0.28</span></div><input id="s-fuzziness" type="range" min="0.00" max="0.70" step="0.01" value="0.28"></div>
-        <div class="row"><div class="lab"><span>Edge Texture</span><span id="v-density">4</span></div><input id="s-density" type="range" min="1" max="12" step="1" value="4"></div>
+        <div class="row"><div class="lab"><span>Edge Fuzziness</span><span id="v-fuzziness">0.42</span></div><input id="s-fuzziness" type="range" min="0.00" max="0.80" step="0.01" value="0.42"></div>
+        <div class="row"><div class="lab"><span>Cotton Texture</span><span id="v-density">6</span></div><input id="s-density" type="range" min="1" max="16" step="1" value="6"></div>
         <div class="row"><div class="lab"><span>Orange Intensity</span><span id="v-colorIntensity">1.00</span></div><input id="s-colorIntensity" type="range" min="0.0" max="2.0" step="0.05" value="1.0"></div>
         <button id="restart-btn">↺ Restart</button>
     </div>
@@ -107,12 +107,12 @@
 
     const params = {
         growthSpeed:    0.18,
-        fuzziness:      0.30,
-        density:        4,
+        fuzziness:      0.42,   // higher = more organic lumpy edge
+        density:        6,      // cotton blob count per frame
         colorIntensity: 1.0,
     };
 
-    const SEGS = 64; // polygon resolution for noisy edge
+    const SEGS = 80; // polygon resolution for noisy edge
 
     // ── Minimal smooth 2-D value noise (no external library) ─────────────────
     function hash2D(x, y) {
@@ -175,33 +175,36 @@
     // ── One simulation step ───────────────────────────────────────────────────
     function step() {
         tick++;
-        const T  = tick * 0.0025;
+        const T  = tick * 0.002;
         const cr = colonyRadius;
         const maxR = Math.min(cv.width, cv.height) * 0.47;
         if (cr < maxR) colonyRadius += params.growthSpeed;
 
         const fz = params.fuzziness;
         const ci = params.colorIntensity;
+        const dn = Math.max(1, params.density | 0);
 
-        // Compute noisy edge — 64-point polygon (two octaves for organic shape)
+        // ── Noisy edge polygon — 3 octaves for organic lumpy shape ─────────────
         const pts = new Float32Array(SEGS * 2);
         for (let i = 0; i < SEGS; i++) {
             const ang = (i / SEGS) * Math.PI * 2;
             const ca  = Math.cos(ang), sa = Math.sin(ang);
-            const nv  = noise(ca * 2.8 + T * 0.5, sa * 2.8 + T * 0.4) * 0.65
-                      + noise(ca * 6.0 + T * 1.2, sa * 6.0 + T * 1.1) * 0.35;
-            const r   = cr * (1.0 + (nv - 0.5) * fz);
+            const nv  = noise(ca * 2.5 + T * 0.30, sa * 2.5 + T * 0.25) * 0.45
+                      + noise(ca * 6.5 + T * 0.85, sa * 6.5 + T * 0.80) * 0.35
+                      + noise(ca * 15 + T * 1.70, sa * 15 + T * 1.60) * 0.20;
+            const r   = cr * (1.0 + (nv - 0.5) * fz * 1.8);
             pts[i * 2]     = cx + ca * r;
             pts[i * 2 + 1] = cy + sa * r;
         }
 
-        // ── Main fill: one noisy circle, accumulates density naturally over time
-        const edgeR = cr * (1.0 + fz * 0.5);
+        // ── Main fill: radial gradient polygon, accumulates colony density ──────
+        const edgeR = cr * (1.0 + fz * 0.6);
         const grd   = ctx.createRadialGradient(cx, cy, 0, cx, cy, edgeR);
-        grd.addColorStop(0,    `hsla(22, ${Math.min(100, 62 * ci)}%, 50%, 0.018)`);
-        grd.addColorStop(0.40, `hsla(27, ${Math.min(100, 28 * ci)}%, 68%, 0.014)`);
-        grd.addColorStop(0.75, `hsla(33, ${Math.min(100,  7 * ci)}%, 88%, 0.009)`);
-        grd.addColorStop(1.0,  `hsla(37, ${Math.min(100,  2 * ci)}%, 95%, 0.003)`);
+        grd.addColorStop(0,    `hsla(21, ${Math.min(100, 68 * ci)}%, 48%, 0.016)`);
+        grd.addColorStop(0.30, `hsla(25, ${Math.min(100, 38 * ci)}%, 60%, 0.012)`);
+        grd.addColorStop(0.60, `hsla(30, ${Math.min(100, 14 * ci)}%, 80%, 0.008)`);
+        grd.addColorStop(0.82, `hsla(34, ${Math.min(100,  5 * ci)}%, 92%, 0.005)`);
+        grd.addColorStop(1.0,  `hsla(37, ${Math.min(100,  2 * ci)}%, 97%, 0.002)`);
         ctx.beginPath();
         ctx.moveTo(pts[0], pts[1]);
         for (let i = 1; i < SEGS; i++) ctx.lineTo(pts[i * 2], pts[i * 2 + 1]);
@@ -209,41 +212,50 @@
         ctx.fillStyle = grd;
         ctx.fill();
 
-        // ── Edge texture: sparse wispy blobs at frontier (every other frame) ──
-        if (tick % 2 === 0) {
-            const n  = Math.max(1, params.density | 0);
-            const ws = Math.min(100, 5 * ci);
-            for (let i = 0; i < n; i++) {
-                const idx = (Math.random() * SEGS | 0);
-                const ex  = pts[idx * 2], ey = pts[idx * 2 + 1];
-                const bx  = ex + (Math.random() - 0.5) * cr * 0.07;
-                const by  = ey + (Math.random() - 0.5) * cr * 0.07;
-                const sz  = 3 + Math.random() * 7;
-                const g   = ctx.createRadialGradient(bx, by, 0, bx, by, sz);
-                g.addColorStop(0, `hsla(34, ${ws}%, 93%, 0.06)`);
-                g.addColorStop(1, `hsla(34, ${ws}%, 93%, 0)`);
-                ctx.beginPath();
-                ctx.arc(bx, by, sz, 0, Math.PI * 2);
-                ctx.fillStyle = g;
-                ctx.fill();
-            }
+        // ── Cotton tufts: overlapping soft blobs at the growing frontier ────────
+        const numTufts = dn * 5;
+        for (let i = 0; i < numTufts; i++) {
+            const idx = (Math.random() * SEGS) | 0;
+            const ex  = pts[idx * 2], ey = pts[idx * 2 + 1];
+            const bx  = ex + (Math.random() - 0.5) * cr * 0.06;
+            const by  = ey + (Math.random() - 0.5) * cr * 0.06;
+            const sz  = 2 + Math.random() * Math.random() * 13;
+            const ws  = Math.min(100, (3 + Math.random() * 8) * ci);
+            puff(bx, by, sz, 35, ws, 87 + Math.random() * 9, 0.04 + Math.random() * 0.04);
         }
 
-        // ── Core reinforcement every 8 ticks — deepens warm orange centre ─────
-        if (tick % 8 === 0) {
-            for (let i = 0; i < 2; i++) {
+        // ── Wispy tendrils — fine tips that reach just beyond the main edge ─────
+        const numWisps = dn * 3;
+        for (let i = 0; i < numWisps; i++) {
+            const idx = (Math.random() * SEGS) | 0;
+            const ex  = pts[idx * 2], ey = pts[idx * 2 + 1];
+            const dx  = ex - cx, dy = ey - cy;
+            const len = Math.sqrt(dx * dx + dy * dy) + 1e-6;
+            const bx  = ex + (dx / len) * (1 + Math.random() * cr * 0.055);
+            const by  = ey + (dy / len) * (1 + Math.random() * cr * 0.055);
+            puff(bx, by, 1 + Math.random() * 4, 36, Math.min(100, 4 * ci), 96, 0.07 + Math.random() * 0.05);
+        }
+
+        // ── Interior stipple: fine scattered dots that deepen the cotton texture ─
+        const numDots = dn * 4;
+        for (let i = 0; i < numDots; i++) {
+            const ang   = Math.random() * Math.PI * 2;
+            const r     = Math.sqrt(Math.random()) * cr * 0.90;
+            const normR = r / (maxR + 1);
+            puff(cx + Math.cos(ang) * r, cy + Math.sin(ang) * r,
+                 2 + Math.random() * 5,
+                 21 + normR * 15,
+                 Math.min(100, (68 - normR * 62) * ci),
+                 50 + normR * 40, 0.018);
+        }
+
+        // ── Core reinforcement every 4 ticks — deepens warm orange centre ───────
+        if (tick % 4 === 0) {
+            for (let i = 0; i < 3; i++) {
                 const ang = Math.random() * Math.PI * 2;
-                const r   = Math.random() * cr * 0.22;
-                const bx  = cx + Math.cos(ang) * r;
-                const by  = cy + Math.sin(ang) * r;
-                const sz  = 6 + Math.random() * 14;
-                const g   = ctx.createRadialGradient(bx, by, 0, bx, by, sz);
-                g.addColorStop(0, `hsla(22, ${Math.min(100, 68 * ci)}%, 50%, 0.04)`);
-                g.addColorStop(1, `hsla(22, ${Math.min(100, 68 * ci)}%, 50%, 0)`);
-                ctx.beginPath();
-                ctx.arc(bx, by, sz, 0, Math.PI * 2);
-                ctx.fillStyle = g;
-                ctx.fill();
+                const r   = Math.random() * cr * 0.30;
+                puff(cx + Math.cos(ang) * r, cy + Math.sin(ang) * r,
+                     10 + Math.random() * 20, 20, Math.min(100, 72 * ci), 46, 0.025);
             }
         }
     }
