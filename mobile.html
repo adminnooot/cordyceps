@@ -29,12 +29,12 @@
 
     let params = {
         speedMult:       0.7,
-        maxHyphae:       4000,
-        spawnCount:      60,
+        maxActive:       200,
+        spawnRate:       2,
         maxGen:          8,
         taperRate:       0.999,
         wanderScale:     0.30,
-        branchProb:      0.12,
+        branchProb:      0.10,
         orangeIntensity: 1.0,
     };
 
@@ -83,7 +83,7 @@
             }
 
             // Branching
-            if (hyphae.length < params.maxHyphae && this.generation < params.maxGen) {
+            if (hyphae.length < params.maxActive && this.generation < params.maxGen) {
                 let branchP = params.branchProb * Math.pow(0.72, this.generation);
                 if (random() < branchP) {
                     let branchAngle = this.angle + random(-0.9, 0.9);
@@ -127,16 +127,22 @@
         hyphae  = [];
         originX = width  * 0.5;
         originY = height * 0.95;
-
-        let count = params.spawnCount;
-        for (let i = 0; i < count; i++) {
-            // Fan hyphae upward: angles span from -PI+0.3 to -0.3 (pointing upward)
-            let angle = map(i, 0, count - 1, -PI + 0.3, -0.3) + random(-0.1, 0.1);
+        // Seed with a small initial burst fanning upward; trickle-spawn continues in draw()
+        for (let i = 0; i < 8; i++) {
+            let angle = random(-PI + 0.3, -0.3);
             hyphae.push(new Hypha(originX, originY, angle, random(1.5, 3.5)));
         }
     }
 
     function draw() {
+        // Trickle-spawn new hyphae from origin each frame, fanning upward
+        if (hyphae.length < params.maxActive) {
+            let toSpawn = Math.min(params.spawnRate, params.maxActive - hyphae.length);
+            for (let i = 0; i < toSpawn; i++) {
+                let angle = random(-PI + 0.3, -0.3);
+                hyphae.push(new Hypha(originX, originY, angle, random(1.5, 3.5)));
+            }
+        }
         for (let i = hyphae.length - 1; i >= 0; i--) {
             let h = hyphae[i];
             h.update();
