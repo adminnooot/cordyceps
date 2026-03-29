@@ -10,20 +10,21 @@ A generative art piece simulating the cottony, puffy expansion of *Cordyceps mil
   <a href="https://adminnooot.github.io/cordyceps/mobile.html"><img alt="Mobile" src="https://img.shields.io/badge/Mobile-111827?style=for-the-badge"></a>
 </p>
 
-> Interactive simulation with real-time controls — adjust growth speed, edge fuzziness, puff density, and orange intensity.
+> Interactive simulation with real-time controls — adjust growth speed, edge noise, ring pattern, color warmth, and more.
 
 ---
 
 ## What It Does
 
-A single colony radius slowly expands from the center of the canvas. Each frame many soft, semi-transparent blobs ("puffs") are scattered across the colony — mostly at the growing edge (cotton tufts + wispy tendrils), with fine stipple dots building interior depth. Because the canvas never clears, these blobs accumulate over time, naturally building up:
+A single colony radius slowly expands from the center of the canvas. Every frame the entire colony is redrawn pixel-by-pixel using ImageData — each pixel's color and opacity are computed from its polar coordinates relative to the center. As a result the look updates instantly whenever any parameter changes.
 
-- **Dense, opaque center** — many frames of puffs have landed here since the colony started
-- **Rich orange-amber pigmentation** in the core (matching how real *C. militaris* develops carotenoid pigments)
-- **Wispy, translucent edge** — only the most recent puffs have reached the outer rim, so it looks soft and semi-transparent
-- **Organic edge shape** — Perlin noise gently irregularizes the growing front so it is never a perfect circle
+- **Dense, opaque golden-yellow center** — full-opacity pixels in the core, matching how real *C. militaris* develops carotenoid pigments
+- **Concentric amber band pattern** — a sine wave perturbed by 2D noise creates subtle ring-like color variation in the interior
+- **Cream/white fringe at the growing edge** — pixels beyond a configurable threshold (default: outer 20 % of the colony radius) lerp toward a creamy white
+- **Organic edge shape** — three octaves of 2D Simplex noise irregularise the growing front so it is never a perfect circle
+- **Random grain texture** — a subtle `Math.random` micro-texture produces a soft, organic filament hint across the colony surface
 
-The entire simulation state is just three numbers: `colonyRadius`, `t` (time for noise), and the canvas origin. No object arrays, no particle tracking — extremely lightweight.
+The entire simulation state is just two numbers: `currentRadius` (px) and `simTime` (s). No object arrays, no particle tracking — extremely lightweight.
 
 ---
 
@@ -33,46 +34,58 @@ This simulation is modeled after *Cordyceps militaris* mycelium growing on agar 
 
 | Real Colony Trait | Simulation Implementation |
 |---|---|
-| Cottony/puffy/cloud-like texture | Overlapping semi-transparent ellipses accumulate into a soft mat |
-| Dense opaque center | Core zone puffs have higher alpha; many frames of accumulation |
-| White edges → orange center | HSB color by distance: hue 38→20, saturation 2→76 |
-| Organic, non-circular edge | Perlin noise displaces the edge radius per angle |
-| Gradual outward expansion | `colonyRadius` grows by `growthSpeed` px each frame |
-| Aerial, pillowy appearance | Each blob has a larger, very transparent outer halo |
+| Golden-yellow to amber pigmentation | Interior pixels lerp between amber `#C8960A` and yellow `#F1C40F` via a noise-perturbed sine wave |
+| Cream/white cottony edge | Outer 20 % of colony radius lerps toward cream `#F5F0E0` |
+| Dense opaque center | Full alpha for pixels well inside the colony radius |
+| Organic, non-circular edge | 3-octave 2D Simplex noise displaces the edge radius per angle |
+| Gradual outward expansion | `currentRadius` grows by `params.growthRate` px/s each frame |
+| Soft fuzzy boundary | Smoothstep fade over an adjustable `edgeFade` band at the colony edge |
 
 ---
 
 ## Parameters
 
+All eight parameters are exposed as real-time sliders in the ⚙ Controls panel and take effect immediately without restarting.
+
 | Variable | Default | Effect |
 |---|---|---|
-| `growthSpeed` | `0.18` | Pixels added to colony radius per frame |
-| `fuzziness` | `0.42` | Amplitude of noise edge irregularity (0 = perfect circle) |
-| `density` | `6` | Cotton blobs drawn per frame — higher = fluffier, lower = lighter CPU |
-| `colorIntensity` | `1.0` | Multiplier for orange/amber saturation in core |
+| `growthRate` | `15` | px/s added to colony radius |
+| `noiseAmp` | `30` | Amplitude of noise edge irregularity in px (0 = perfect circle) |
+| `edgeFade` | `20` | Width in px of the soft smoothstep fade at the colony boundary |
+| `ringFreq` | `0.04` | Frequency of concentric color bands (higher = tighter rings) |
+| `ringWobble` | `25` | Noise perturbation applied to the ring distance (organic wobble) |
+| `fringeStart` | `0.80` | Normalised radius (0–1) where the cream fringe begins |
+| `grainRange` | `0.15` | Amplitude of random micro-texture opacity variation |
+| `colorWarmth` | `0.30` | Minimum amber–yellow mix (0 = darkest amber, 1 = pure yellow) |
 
 ---
 
 ## How It Works
 
 ```
-setup()
-  └─ createCanvas → init()
-        └─ draw inoculation dot, set colonyRadius = 6
+resize()
+  └─ set W, H, cx, cy, maxR from window dimensions
 
-draw() [every frame — ~73 draw calls with default density=6, capped at 30 fps]
-  ├─ colonyRadius += growthSpeed
-  ├─ compute 80-point noisy polygon (three noise octaves, 1.8× amplitude)
-  ├─ fill entire colony shape with one radial gradient (1 draw call)
-  │     deep orange core → amber → warm cream → near-white edge, alpha ~0.016
-  │     ↳ pixels accumulate: centre gets dense & opaque, frontier stays wispy
-  ├─ density×5 cotton tufts at frontier — overlapping soft blobs, size 2–15 px
-  ├─ density×3 wispy tendrils — tiny bright tips pushed just beyond the edge
-  ├─ density×4 interior stipple — fine dots scattered throughout colony
-  └─ every 4th frame: 3 amber blobs to deepen core colour
+frame(ts) [every animation frame via requestAnimationFrame]
+  ├─ compute dt (capped at 50 ms to survive tab-switching)
+  ├─ simTime   += dt
+  ├─ currentRadius += params.growthRate × dt  (until maxR + noiseAmp)
+  ├─ updateNoiseCache(simTime × 0.4)
+  │     └─ 1440 (desktop) / 720 (mobile) angle samples,
+  │        three Simplex octaves → noiseCache[]
+  ├─ ctx.fillRect  — clear main canvas to #2d3a4a
+  ├─ renderColony()
+  │     ├─ for every pixel (px, py) within bounding radius:
+  │     │     ├─ r, theta = polar coords from center
+  │     │     ├─ nv = noiseCache interpolated at theta
+  │     │     ├─ targetR = currentRadius + nv × noiseAmp
+  │     │     ├─ alpha from smoothstep edge fade over [targetR−edgeFade, targetR+edgeFade]
+  │     │     ├─ color from concentric band (normR ≥ fringeStart → cream lerp,
+  │     │     │            else amber↔yellow via sine wave + ringWobble noise)
+  │     │     └─ grain = Math.random() micro-texture multiplied into alpha
+  │     └─ octx.putImageData → ctx.drawImage (offscreen → main canvas)
+  └─ [desktop only] update radius/time readout label
 ```
-
-The canvas never clears — the single noisy circle fill accumulates as pixels each frame. The cotton tufts and wisps build the ragged, fluffy texture at the growing edge. No particle arrays, no hypha objects — just one growing shape plus scattered soft blobs per frame.
 
 ---
 
@@ -81,8 +94,9 @@ The canvas never clears — the single noisy circle fill accumulates as pixels e
 | File | Purpose |
 |---|---|
 | `index.html` | Device detection — auto-redirects to `desktop.html` or `mobile.html` |
-| `desktop.html` | Full simulation with toggleable ⚙ Controls panel |
-| `mobile.html` | Mobile-optimized — same simulation, no control panel |
+| `desktop.html` | Full simulation with toggleable ⚙ Controls panel (8 real-time sliders) |
+| `mobile.html` | Mobile-optimized — same simulation, bottom-sheet controls panel |
+| `simulation.html` | Standalone live preview — the new model rendered in a centred 700×700 canvas with a radius/time readout |
 | `cordyceps/index.html` | Legacy redirect — auto-redirects to `desktop.html` or `mobile.html` (preserves old bookmarks) |
 
 ---
@@ -90,7 +104,8 @@ The canvas never clears — the single noisy circle fill accumulates as pixels e
 ## Tech
 
 - Vanilla JS + HTML5 Canvas 2D — no libraries, no build tools
-- HSL color mode for natural distance-based color blending
+- Pixel-level rendering via `ImageData` for per-pixel color and alpha control
+- 2D Simplex Noise (Stefan Gustavson's algorithm, inline) for edge shape and grain
 - Single HTML files — open directly in any browser
 
 ---
@@ -105,15 +120,20 @@ open desktop.html   # or drag it into a browser
 
 Or visit the [live GitHub Pages site](https://adminnooot.github.io/cordyceps/) for the interactive version with GUI controls.
 
-**GUI Controls** (toggle with the ⚙ button in the top-right corner):
+**GUI Controls** (toggle with the ⚙ button):
 
 | Control | What it does |
 |---|---|
-| Growth Speed | How fast the colony radius expands |
-| Edge Fuzziness | Irregularity of the growing edge (higher = more organic) |
-| Puff Density | Blobs drawn per frame — lower = lighter on CPU |
-| Orange Intensity | Saturation of warm orange pigmentation in core |
-| ↺ Restart | Re-initialize simulation |
+| Growth Speed | How fast the colony radius expands (px/s) |
+| Edge Noise Amplitude | Irregularity of the growing edge (higher = more organic) |
+| Edge Softness | Width of the soft fade at the colony boundary |
+| Ring Frequency | Frequency of concentric color bands |
+| Ring Wobble | Organic perturbation of the ring pattern |
+| Fringe Start | Where the cream fringe begins (as fraction of colony radius) |
+| Grain Intensity | Amplitude of the random micro-texture opacity variation |
+| Color Warmth | Amber-to-yellow bias of the interior color |
+| ⏸ Pause / ▶ Resume | Freeze / continue the simulation |
+| ↺ Restart | Re-initialize simulation from radius 0 |
 
 ---
 

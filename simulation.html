@@ -43,12 +43,104 @@ h1 {
   display: block;
   flex-shrink: 0;
 }
+
+/* ── Controls toggle button ─── */
+#toggle-btn {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 20;
+  padding: 8px 14px;
+  background: rgba(12, 16, 20, 0.85);
+  border: 1px solid rgba(255, 170, 80, 0.45);
+  border-radius: 8px;
+  color: #ffaa50;
+  cursor: pointer;
+  font-size: 14px;
+  letter-spacing: 0.03em;
+}
+#toggle-btn:hover { background: rgba(255, 170, 80, 0.12); }
+
+/* ── Control panel overlay ─── */
+#control-panel {
+  position: fixed;
+  top: 50px;
+  right: 12px;
+  z-index: 10;
+  width: 256px;
+  background: rgba(12, 16, 20, 0.88);
+  border: 1px solid rgba(255, 170, 80, 0.3);
+  border-radius: 10px;
+  padding: 14px;
+  color: #ffeedd;
+  transition: opacity 0.2s, transform 0.2s;
+  backdrop-filter: blur(6px);
+}
+#control-panel.hidden { opacity: 0; pointer-events: none; transform: translateY(-8px); }
+
+.row { margin-bottom: 10px; }
+.lab { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; color: #ffd9b0; }
+
+input[type="range"] {
+  -webkit-appearance: none;
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 170, 80, 0.2);
+  border-radius: 2px;
+  outline: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  background: #ff9a40;
+  border-radius: 50%;
+  cursor: pointer;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: #ff9a40;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.btn-row { display: flex; gap: 8px; margin-top: 8px; }
+.ctrl-btn {
+  flex: 1;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 170, 80, 0.45);
+  background: rgba(255, 170, 80, 0.12);
+  color: #ffd9b0;
+  cursor: pointer;
+  font-size: 13px;
+  letter-spacing: 0.03em;
+}
+.ctrl-btn:hover { background: rgba(255, 170, 80, 0.22); }
 </style>
 </head>
 <body>
 <h1>Cordyceps Growth Simulation</h1>
 <canvas id="sim"></canvas>
 <div id="info">Radius: 0.0 px &nbsp;|&nbsp; Time: 0.0 s</div>
+
+<button id="toggle-btn" aria-expanded="false" aria-controls="control-panel">⚙ Controls</button>
+<div id="control-panel" role="region" aria-label="Simulation controls">
+    <div class="row"><div class="lab"><span>Growth Speed</span><span id="v-growthRate">15</span></div><input id="s-growthRate" type="range" min="1" max="50" step="1" value="15"></div>
+    <div class="row"><div class="lab"><span>Edge Noise Amplitude</span><span id="v-noiseAmp">30</span></div><input id="s-noiseAmp" type="range" min="0" max="80" step="1" value="30"></div>
+    <div class="row"><div class="lab"><span>Edge Softness</span><span id="v-edgeFade">20</span></div><input id="s-edgeFade" type="range" min="5" max="60" step="1" value="20"></div>
+    <div class="row"><div class="lab"><span>Ring Frequency</span><span id="v-ringFreq">0.040</span></div><input id="s-ringFreq" type="range" min="0.01" max="0.15" step="0.005" value="0.04"></div>
+    <div class="row"><div class="lab"><span>Ring Wobble</span><span id="v-ringWobble">25</span></div><input id="s-ringWobble" type="range" min="0" max="60" step="1" value="25"></div>
+    <div class="row"><div class="lab"><span>Fringe Start</span><span id="v-fringeStart">0.80</span></div><input id="s-fringeStart" type="range" min="0.50" max="0.99" step="0.01" value="0.80"></div>
+    <div class="row"><div class="lab"><span>Grain Intensity</span><span id="v-grainRange">0.15</span></div><input id="s-grainRange" type="range" min="0.0" max="0.5" step="0.01" value="0.15"></div>
+    <div class="row"><div class="lab"><span>Color Warmth</span><span id="v-colorWarmth">0.30</span></div><input id="s-colorWarmth" type="range" min="0.0" max="1.0" step="0.05" value="0.30"></div>
+    <div class="btn-row">
+        <button id="pause-btn" class="ctrl-btn">⏸ Pause</button>
+        <button id="restart-btn" class="ctrl-btn">↺ Restart</button>
+    </div>
+</div>
 
 <script>
 'use strict';
@@ -184,11 +276,21 @@ function getNoiseForAngle(theta) {
 let currentRadius = 0;
 let simTime       = 0;
 let lastTs        = null;
+let paused        = false;
 
-// Growth speed: ~0.25 px/frame at 60 fps = 15 px/s
-const GROWTH_RATE = 15;   // px/s
-const NOISE_AMP   = 30;   // px of radial noise distortion
-const EDGE_FADE   = 20;   // px of soft fade at the colony boundary
+/* ════════════════════════════════════════════════════════════════
+   SIMULATION PARAMETERS  (all sliders write into this object)
+════════════════════════════════════════════════════════════════ */
+const params = {
+  growthRate:  15,    // px/s
+  noiseAmp:    30,    // px of radial noise distortion
+  edgeFade:    20,    // px of soft boundary fade
+  ringFreq:    0.04,  // sine wave multiplier for concentric bands
+  ringWobble:  25,    // noise perturbation strength on distance
+  fringeStart: 0.80,  // normalised radius where cream fringe begins
+  grainRange:  0.15,  // random opacity variation range
+  colorWarmth: 0.30,  // minimum t in color calculation (0=amber, 1=yellow)
+};
 
 /* ════════════════════════════════════════════════════════════════
    COLONY RENDER  (pixel-level via ImageData)
@@ -196,11 +298,13 @@ const EDGE_FADE   = 20;   // px of soft fade at the colony boundary
 function renderColony() {
   if (currentRadius < 0.5) return;
 
+  const { noiseAmp, edgeFade, ringFreq, ringWobble, fringeStart, grainRange, colorWarmth } = params;
+
   const imgData = octx.createImageData(W, H);
   const data    = imgData.data;
 
   // Largest possible noisy radius for this frame (quick-reject bound)
-  const boundR  = currentRadius + NOISE_AMP + EDGE_FADE;
+  const boundR  = currentRadius + noiseAmp + edgeFade;
   const boundR2 = boundR * boundR;
 
   for (let py = 0; py < H; py++) {
@@ -216,16 +320,16 @@ function renderColony() {
       const r       = Math.sqrt(r2);
       const theta   = Math.atan2(dy, dx);
       const nv      = getNoiseForAngle(theta);
-      const targetR = currentRadius + nv * NOISE_AMP;
+      const targetR = currentRadius + nv * noiseAmp;
 
-      if (r > targetR + EDGE_FADE) continue;
+      if (r > targetR + edgeFade) continue;
 
       // Smooth (smoothstep) edge fade
       let alpha;
-      if (r <= targetR - EDGE_FADE) {
+      if (r <= targetR - edgeFade) {
         alpha = 1.0;
       } else {
-        const u = (targetR + EDGE_FADE - r) / (EDGE_FADE * 2);
+        const u = (targetR + edgeFade - r) / (edgeFade * 2);
         alpha   = u * u * (3 - 2 * u);   // smoothstep
         if (alpha <= 0) continue;
       }
@@ -239,15 +343,14 @@ function renderColony() {
       }
 
       // ── Concentric ring color: perturb radius with 2D noise for organic wobble
-      const perturbedDist = r + Noise.noise2d(px * 0.015, py * 0.015) * 25;
-      const wave = Math.sin(perturbedDist * 0.04);
+      const perturbedDist = r + Noise.noise2d(px * 0.015, py * 0.015) * ringWobble;
+      const wave = Math.sin(perturbedDist * ringFreq);
 
       // Map wave to predominantly golden-yellow palette with subtle amber bands
       // wave range is [-1, 1]; we bias heavily toward yellow
       let R, G, B;
 
-      // White/cream fringe in outer 20% of colony radius
-      const fringeStart = 0.80;
+      // White/cream fringe in outer portion of colony radius
       if (normR >= fringeStart) {
         // Lerp from yellow toward cream as we approach the edge
         const ft = (normR - fringeStart) / (1.0 - fringeStart);  // 0..1
@@ -260,19 +363,15 @@ function renderColony() {
         B = (baseB + ft2 * (creamB - baseB)) | 0;
       } else {
         // Interior: golden yellow dominant with subtle amber concentric bands
-        // wave > 0  → rich yellow #F1C40F
-        // wave < 0  → slightly darker amber #C8960A  (only a subtle shift)
         const bandT = (wave + 1.0) * 0.5;   // remap [-1,1] → [0,1]
-        // Clamp so amber is subtle — minimum is 0.3 even at wave = -1
-        const t = 0.30 + bandT * 0.70;      // range [0.30, 1.00]
-        // t=1 → #F1C40F (yellow), t=0 → #C8960A (amber)
-        R = (200 + t * (241 - 200)) | 0;    // 200..241
-        G = (150 + t * (196 - 150)) | 0;    // 150..196
-        B = ( 10 + t * ( 15 -  10)) | 0;    //  10..15
+        const t = colorWarmth + bandT * (1 - colorWarmth);
+        R = (200 + t * (241 - 200)) | 0;
+        G = (150 + t * (196 - 150)) | 0;
+        B = ( 10 + t * ( 15 -  10)) | 0;
       }
 
       // ── Micro-texture grain (subtle filament hint) ──────────────
-      const grain = 0.85 + Math.random() * 0.15;
+      const grain = (1 - grainRange) + Math.random() * grainRange;
       alpha *= grain;
 
       const i4 = (py * W + px) * 4;
@@ -291,6 +390,7 @@ function renderColony() {
 ════════════════════════════════════════════════════════════════ */
 function frame(ts) {
   requestAnimationFrame(frame);
+  if (paused) return;
 
   if (lastTs === null) lastTs = ts;
   const dt = Math.min((ts - lastTs) / 1000, 0.05);  // cap to 50 ms
@@ -298,7 +398,7 @@ function frame(ts) {
 
   simTime       += dt;
   // Grow until the colony covers the farthest corner of the canvas
-  currentRadius  = Math.min(currentRadius + GROWTH_RATE * dt, maxR + NOISE_AMP);
+  currentRadius  = Math.min(currentRadius + params.growthRate * dt, maxR + params.noiseAmp);
 
   // Rebuild noise cache with slowly-advancing time
   updateNoiseCache(simTime * 0.4);
@@ -316,6 +416,47 @@ function frame(ts) {
   info.textContent =
     `Radius: ${currentRadius.toFixed(1)} px\u2002|\u2002Time: ${simTime.toFixed(1)} s`;
 }
+
+/* ════════════════════════════════════════════════════════════════
+   CONTROL PANEL WIRING
+════════════════════════════════════════════════════════════════ */
+document.getElementById('toggle-btn').addEventListener('click', () => {
+    const panel = document.getElementById('control-panel');
+    const btn   = document.getElementById('toggle-btn');
+    panel.classList.toggle('hidden');
+    btn.setAttribute('aria-expanded', !panel.classList.contains('hidden'));
+});
+
+[
+    ['s-growthRate',   'v-growthRate',   'growthRate',   v => +v,  v => String(+v)      ],
+    ['s-noiseAmp',     'v-noiseAmp',     'noiseAmp',     v => +v,  v => String(+v)      ],
+    ['s-edgeFade',     'v-edgeFade',     'edgeFade',     v => +v,  v => String(+v)      ],
+    ['s-ringFreq',     'v-ringFreq',     'ringFreq',     v => +v,  v => (+v).toFixed(3) ],
+    ['s-ringWobble',   'v-ringWobble',   'ringWobble',   v => +v,  v => String(+v)      ],
+    ['s-fringeStart',  'v-fringeStart',  'fringeStart',  v => +v,  v => (+v).toFixed(2) ],
+    ['s-grainRange',   'v-grainRange',   'grainRange',   v => +v,  v => (+v).toFixed(2) ],
+    ['s-colorWarmth',  'v-colorWarmth',  'colorWarmth',  v => +v,  v => (+v).toFixed(2) ],
+].forEach(([sid, vid, key, parse, fmt]) => {
+    const sl = document.getElementById(sid);
+    const vl = document.getElementById(vid);
+    sl.addEventListener('input', () => { params[key] = parse(sl.value); vl.textContent = fmt(sl.value); });
+});
+
+document.getElementById('pause-btn').addEventListener('click', () => {
+    paused = !paused;
+    document.getElementById('pause-btn').textContent = paused ? '▶ Resume' : '⏸ Pause';
+    if (!paused) lastTs = null;
+});
+
+document.getElementById('restart-btn').addEventListener('click', () => {
+    currentRadius = 0;
+    simTime       = 0;
+    lastTs        = null;
+    paused        = false;
+    document.getElementById('pause-btn').textContent = '⏸ Pause';
+    ctx.fillStyle = '#2d3a4a';
+    ctx.fillRect(0, 0, W, H);
+});
 
 /* ════════════════════════════════════════════════════════════════
    INIT
