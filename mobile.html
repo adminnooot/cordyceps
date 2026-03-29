@@ -313,7 +313,7 @@
                     B = ( 10 + t * ( 15 -  10)) | 0;
                 }
 
-                const grain = (1 - grainRange) + ((Noise.noise2d(px * 0.28 + simTime * 0.04, py * 0.28) + 1) * 0.5) * grainRange;
+                const grain = (1 - grainRange) + Math.random() * grainRange;
                 alpha *= grain;
 
                 const i4 = (py * W + px) * 4;
