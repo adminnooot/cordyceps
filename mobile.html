@@ -6,164 +6,403 @@
     <title>Cordyceps militaris — Mobile</title>
     <style>
         *, *::before, *::after { box-sizing: border-box; }
-        html, body { margin: 0; width: 100vw; height: 100dvh; overflow: hidden; background: #0a0b09; }
-        canvas { display: block; width: 100%; height: 100%; }
+        html, body { margin: 0; width: 100vw; height: 100dvh; overflow: hidden; background: #2d3a4a; font-family: system-ui, sans-serif; }
+        canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+
+        /* ── Toggle button — bottom-right corner ─── */
+        #toggle-btn {
+            position: fixed;
+            bottom: 18px;
+            right: 16px;
+            z-index: 20;
+            padding: 12px 18px;
+            background: rgba(12, 16, 20, 0.85);
+            border: 1px solid rgba(255, 170, 80, 0.45);
+            border-radius: 10px;
+            color: #ffaa50;
+            cursor: pointer;
+            font-size: 15px;
+            letter-spacing: 0.03em;
+            touch-action: manipulation;
+        }
+        #toggle-btn:active { background: rgba(255, 170, 80, 0.18); }
+
+        /* ── Bottom sheet panel ─── */
+        #control-panel {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            z-index: 10;
+            background: rgba(12, 16, 20, 0.92);
+            border-top: 1px solid rgba(255, 170, 80, 0.3);
+            border-radius: 16px 16px 0 0;
+            padding: 18px 20px 32px;
+            color: #ffeedd;
+            transform: translateY(0);
+            transition: transform 0.3s ease;
+            backdrop-filter: blur(8px);
+            max-height: 80dvh;
+            overflow-y: auto;
+        }
+        #control-panel.hidden { transform: translateY(100%); }
+
+        .sheet-handle {
+            width: 40px;
+            height: 4px;
+            background: rgba(255,170,80,0.35);
+            border-radius: 2px;
+            margin: 0 auto 16px;
+        }
+
+        .row { margin-bottom: 14px; }
+        .lab { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px; color: #ffd9b0; }
+
+        input[type="range"] {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 6px;
+            background: rgba(255, 170, 80, 0.2);
+            border-radius: 3px;
+            outline: none;
+            touch-action: manipulation;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 24px;
+            height: 24px;
+            background: #ff9a40;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        input[type="range"]::-moz-range-thumb {
+            width: 24px;
+            height: 24px;
+            background: #ff9a40;
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        .btn-row { display: flex; gap: 10px; margin-top: 10px; }
+        .ctrl-btn {
+            flex: 1;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 170, 80, 0.45);
+            background: rgba(255, 170, 80, 0.12);
+            color: #ffd9b0;
+            cursor: pointer;
+            font-size: 14px;
+            letter-spacing: 0.03em;
+            touch-action: manipulation;
+        }
+        .ctrl-btn:active { background: rgba(255, 170, 80, 0.24); }
     </style>
 </head>
 <body>
     <canvas id="sim"></canvas>
+    <button id="toggle-btn">⚙ Controls</button>
+    <div id="control-panel" class="hidden">
+        <div class="sheet-handle"></div>
+        <div class="row"><div class="lab"><span>Growth Speed</span><span id="v-growthRate">15</span></div><input id="s-growthRate" type="range" min="1" max="50" step="1" value="15"></div>
+        <div class="row"><div class="lab"><span>Edge Noise Amplitude</span><span id="v-noiseAmp">30</span></div><input id="s-noiseAmp" type="range" min="0" max="80" step="1" value="30"></div>
+        <div class="row"><div class="lab"><span>Edge Softness</span><span id="v-edgeFade">20</span></div><input id="s-edgeFade" type="range" min="5" max="60" step="1" value="20"></div>
+        <div class="row"><div class="lab"><span>Ring Frequency</span><span id="v-ringFreq">0.040</span></div><input id="s-ringFreq" type="range" min="0.01" max="0.15" step="0.005" value="0.04"></div>
+        <div class="row"><div class="lab"><span>Ring Wobble</span><span id="v-ringWobble">25</span></div><input id="s-ringWobble" type="range" min="0" max="60" step="1" value="25"></div>
+        <div class="row"><div class="lab"><span>Fringe Start</span><span id="v-fringeStart">0.80</span></div><input id="s-fringeStart" type="range" min="0.50" max="0.99" step="0.01" value="0.80"></div>
+        <div class="row"><div class="lab"><span>Grain Intensity</span><span id="v-grainRange">0.15</span></div><input id="s-grainRange" type="range" min="0.0" max="0.5" step="0.01" value="0.15"></div>
+        <div class="row"><div class="lab"><span>Color Warmth</span><span id="v-colorWarmth">0.30</span></div><input id="s-colorWarmth" type="range" min="0.0" max="1.0" step="0.05" value="0.30"></div>
+        <div class="btn-row">
+            <button id="pause-btn" class="ctrl-btn">⏸ Pause</button>
+            <button id="restart-btn" class="ctrl-btn">↺ Restart</button>
+        </div>
+    </div>
 
     <script>
     'use strict';
 
-    // ── Canvas setup ──────────────────────────────────────────────────────────
-    const cv  = document.getElementById('sim');
-    const ctx = cv.getContext('2d');
+    /* ════════════════════════════════════════════════════════════════
+       2D SIMPLEX NOISE  (Stefan Gustavson's algorithm — inline)
+       Returns values in the range [-1, 1]
+    ════════════════════════════════════════════════════════════════ */
+    const Noise = (() => {
+        const grad3 = new Float32Array([
+             1, 1, 0,  -1, 1, 0,   1,-1, 0,  -1,-1, 0,
+             1, 0, 1,  -1, 0, 1,   1, 0,-1,  -1, 0,-1,
+             0, 1, 1,   0,-1, 1,   0, 1,-1,   0,-1,-1
+        ]);
+        const perm      = new Uint8Array(512);
+        const permMod12 = new Uint8Array(512);
+        (function buildPerm() {
+            const p = new Uint8Array(256);
+            for (let i = 0; i < 256; i++) p[i] = i;
+            let s = 42;
+            for (let i = 255; i > 0; i--) {
+                s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+                const j = s % (i + 1);
+                const t = p[i]; p[i] = p[j]; p[j] = t;
+            }
+            for (let i = 0; i < 512; i++) {
+                perm[i]      = p[i & 255];
+                permMod12[i] = perm[i] % 12;
+            }
+        })();
+        const F2 = 0.5 * (Math.sqrt(3) - 1);
+        const G2 = (3 - Math.sqrt(3)) / 6;
+        function noise2d(xin, yin) {
+            const s  = (xin + yin) * F2;
+            const i  = Math.floor(xin + s) | 0;
+            const j  = Math.floor(yin + s) | 0;
+            const t  = (i + j) * G2;
+            const X0 = i - t,  Y0 = j - t;
+            const x0 = xin - X0, y0 = yin - Y0;
+            let i1, j1;
+            if (x0 > y0) { i1 = 1; j1 = 0; } else { i1 = 0; j1 = 1; }
+            const x1 = x0 - i1 + G2,    y1 = y0 - j1 + G2;
+            const x2 = x0 - 1 + 2 * G2, y2 = y0 - 1 + 2 * G2;
+            const ii  = i & 255, jj = j & 255;
+            const gi0 = permMod12[ii      + perm[jj     ]];
+            const gi1 = permMod12[ii + i1 + perm[jj + j1]];
+            const gi2 = permMod12[ii + 1  + perm[jj + 1 ]];
+            let n0 = 0, n1 = 0, n2 = 0;
+            let t0 = 0.5 - x0*x0 - y0*y0;
+            if (t0 >= 0) { t0 *= t0; n0 = t0*t0 * (grad3[gi0*3]*x0 + grad3[gi0*3+1]*y0); }
+            let t1 = 0.5 - x1*x1 - y1*y1;
+            if (t1 >= 0) { t1 *= t1; n1 = t1*t1 * (grad3[gi1*3]*x1 + grad3[gi1*3+1]*y1); }
+            let t2 = 0.5 - x2*x2 - y2*y2;
+            if (t2 >= 0) { t2 *= t2; n2 = t2*t2 * (grad3[gi2*3]*x2 + grad3[gi2*3+1]*y2); }
+            return 70 * (n0 + n1 + n2);
+        }
+        return { noise2d };
+    })();
 
-    let colonyRadius, tick, cx, cy;
-    let rafId = null, lastStamp = 0;
-    const FRAME_MS = 1000 / 20;   // 20 fps — lightest possible on mobile battery
+    /* ════════════════════════════════════════════════════════════════
+       SIMULATION PARAMETERS  (all sliders write into this object)
+    ════════════════════════════════════════════════════════════════ */
+    const params = {
+        growthRate:  15,    // px/s  (in virtual px)
+        noiseAmp:    30,    // px of radial noise distortion
+        edgeFade:    20,    // px of soft boundary fade
+        ringFreq:    0.04,  // sine wave multiplier for concentric bands
+        ringWobble:  25,    // noise perturbation strength on distance
+        fringeStart: 0.80,  // normalised radius where cream fringe begins
+        grainRange:  0.15,  // random opacity variation range
+        colorWarmth: 0.30,  // minimum t in colour calculation (0=amber, 1=yellow)
+    };
 
-    // Fixed params (no control panel on mobile)
-    const growthSpeed    = 0.16;
-    const fuzziness      = 0.38;
-    const density        = 5;
-    const colorIntensity = 1.0;
+    /* ════════════════════════════════════════════════════════════════
+       CANVAS / OFFSCREEN SETUP
+       Mobile: render at 0.5× device-pixel scale for performance;
+       CSS stretches the canvas back to full viewport size.
+    ════════════════════════════════════════════════════════════════ */
+    const SCALE = 0.5;   // internal resolution multiplier
+    const cv    = document.getElementById('sim');
+    const ctx   = cv.getContext('2d');
+    const off   = document.createElement('canvas');
+    const octx  = off.getContext('2d', { willReadFrequently: true });
 
-    const SEGS = 48; // lower polygon resolution on mobile
+    let W, H, cx, cy, maxR;
 
-    // ── Minimal smooth 2-D value noise ────────────────────────────────────────
-    function hash2D(x, y) {
-        const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
-        return n - Math.floor(n);
+    function resize() {
+        W = Math.round(window.innerWidth  * SCALE);
+        H = Math.round(window.innerHeight * SCALE);
+        cv.width  = W;  cv.height  = H;
+        off.width = W;  off.height = H;
+        cx = W / 2;
+        cy = H / 2;
+        maxR = Math.sqrt(cx * cx + cy * cy);
     }
-    function noise(x, y) {
-        const ix = Math.floor(x), iy = Math.floor(y);
-        const fx = x - ix,        fy = y - iy;
-        const ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy);
-        const a = hash2D(ix, iy),     b = hash2D(ix + 1, iy);
-        const c = hash2D(ix, iy + 1), d = hash2D(ix + 1, iy + 1);
-        return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
+
+    /* ════════════════════════════════════════════════════════════════
+       NOISE ANGLE CACHE  (720 steps — half of desktop for perf)
+    ════════════════════════════════════════════════════════════════ */
+    const ANGLE_STEPS = 720;
+    const noiseCache  = new Float32Array(ANGLE_STEPS);
+    const TWO_PI      = Math.PI * 2;
+
+    function updateNoiseCache(t) {
+        for (let i = 0; i < ANGLE_STEPS; i++) {
+            const theta = (i / ANGLE_STEPS) * TWO_PI;
+            const cosT  = Math.cos(theta);
+            const sinT  = Math.sin(theta);
+            const n =
+                Noise.noise2d(cosT * 2.2  + t * 0.25, sinT * 2.2  + t * 0.25) * 0.55 +
+                Noise.noise2d(cosT * 5.5  + t * 0.70, sinT * 5.5  + t * 0.70) * 0.30 +
+                Noise.noise2d(cosT * 12.0 + t * 1.50, sinT * 12.0 + t * 1.50) * 0.15;
+            noiseCache[i] = n;
+        }
     }
 
-    // ── Draw one soft radial-gradient blob ───────────────────────────────────
-    function puff(x, y, sz, h, s, l, a) {
-        const grd = ctx.createRadialGradient(x, y, 0, x, y, sz);
-        grd.addColorStop(0, `hsla(${h},${s}%,${l}%,${a})`);
-        grd.addColorStop(1, `hsla(${h},${s}%,${l}%,0)`);
-        ctx.fillStyle = grd;
-        ctx.beginPath();
-        ctx.arc(x, y, sz, 0, Math.PI * 2);
-        ctx.fill();
+    function getNoiseForAngle(theta) {
+        const raw = ((theta / TWO_PI) * ANGLE_STEPS + ANGLE_STEPS) % ANGLE_STEPS;
+        const i0  = raw | 0;
+        const i1  = (i0 + 1) % ANGLE_STEPS;
+        const f   = raw - i0;
+        return noiseCache[i0] * (1 - f) + noiseCache[i1] * f;
     }
 
-    // ── Initialise / restart simulation ──────────────────────────────────────
-    function init() {
-        if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
-        cv.width  = cv.clientWidth  || window.innerWidth;
-        cv.height = cv.clientHeight || window.innerHeight;
-        cx = cv.width  * 0.5;
-        cy = cv.height * 0.5;
-        colonyRadius = 6;
-        tick = 0;
+    /* ════════════════════════════════════════════════════════════════
+       SIMULATION STATE
+    ════════════════════════════════════════════════════════════════ */
+    let currentRadius = 0;
+    let simTime       = 0;
+    let lastTs        = null;
+    let paused        = false;
 
-        ctx.fillStyle = '#0a0b09';
-        ctx.fillRect(0, 0, cv.width, cv.height);
+    /* ════════════════════════════════════════════════════════════════
+       COLONY RENDER  (pixel-level via ImageData)
+    ════════════════════════════════════════════════════════════════ */
+    function renderColony() {
+        if (currentRadius < 0.5) return;
 
-        // Inoculation dot
-        for (let r = 14; r > 0; r--) {
-            const a = (14 - r) / 14 * 0.22 + 0.02;
-            puff(cx, cy, r * 2.4, 23, Math.min(100, 70 * colorIntensity), 55, a);
+        const { noiseAmp, edgeFade, ringFreq, ringWobble, fringeStart, grainRange, colorWarmth } = params;
+
+        const imgData = octx.createImageData(W, H);
+        const data    = imgData.data;
+
+        const boundR  = currentRadius + noiseAmp + edgeFade;
+        const boundR2 = boundR * boundR;
+
+        for (let py = 0; py < H; py++) {
+            const dy  = py - cy;
+            const dy2 = dy * dy;
+            if (dy2 > boundR2) continue;
+
+            for (let px = 0; px < W; px++) {
+                const dx  = px - cx;
+                const r2  = dx * dx + dy2;
+                if (r2 > boundR2) continue;
+
+                const r       = Math.sqrt(r2);
+                const theta   = Math.atan2(dy, dx);
+                const nv      = getNoiseForAngle(theta);
+                const targetR = currentRadius + nv * noiseAmp;
+
+                if (r > targetR + edgeFade) continue;
+
+                let alpha;
+                if (r <= targetR - edgeFade) {
+                    alpha = 1.0;
+                } else {
+                    const u = (targetR + edgeFade - r) / (edgeFade * 2);
+                    alpha   = u * u * (3 - 2 * u);
+                    if (alpha <= 0) continue;
+                }
+
+                const normR = r / Math.max(targetR, 1);
+                if (normR < 0.15) {
+                    alpha *= 0.75 + normR * (1 / 0.15) * 0.25;
+                }
+
+                const perturbedDist = r + Noise.noise2d(px * 0.015, py * 0.015) * ringWobble;
+                const wave = Math.sin(perturbedDist * ringFreq);
+
+                let R, G, B;
+                if (normR >= fringeStart) {
+                    const ft  = (normR - fringeStart) / (1.0 - fringeStart);
+                    const ft2 = ft * ft;
+                    R = (241 + ft2 * (245 - 241)) | 0;
+                    G = (196 + ft2 * (240 - 196)) | 0;
+                    B = ( 15 + ft2 * (224 -  15)) | 0;
+                } else {
+                    const bandT = (wave + 1.0) * 0.5;
+                    const t = colorWarmth + bandT * (1 - colorWarmth);
+                    R = (200 + t * (241 - 200)) | 0;
+                    G = (150 + t * (196 - 150)) | 0;
+                    B = ( 10 + t * ( 15 -  10)) | 0;
+                }
+
+                const grain = (1 - grainRange) + ((Noise.noise2d(px * 0.28 + simTime * 0.04, py * 0.28) + 1) * 0.5) * grainRange;
+                alpha *= grain;
+
+                const i4 = (py * W + px) * 4;
+                data[i4    ] = R;
+                data[i4 + 1] = G;
+                data[i4 + 2] = B;
+                data[i4 + 3] = (alpha * 255) | 0;
+            }
         }
 
-        lastStamp = 0;
-        rafId = requestAnimationFrame(frame);
+        octx.putImageData(imgData, 0, 0);
     }
 
-    // ── Animation loop (20 fps cap) ───────────────────────────────────────────
+    /* ════════════════════════════════════════════════════════════════
+       ANIMATION LOOP
+    ════════════════════════════════════════════════════════════════ */
     function frame(ts) {
-        rafId = requestAnimationFrame(frame);
-        const dt = ts - lastStamp;
-        if (dt < FRAME_MS) return;
-        lastStamp = ts - (dt % FRAME_MS);
-        step();
+        requestAnimationFrame(frame);
+        if (paused) return;
+
+        if (lastTs === null) lastTs = ts;
+        const dt = Math.min((ts - lastTs) / 1000, 0.05);
+        lastTs = ts;
+
+        simTime       += dt;
+        currentRadius  = Math.min(currentRadius + params.growthRate * SCALE * dt, maxR + params.noiseAmp);
+
+        updateNoiseCache(simTime * 0.4);
+
+        ctx.fillStyle = '#2d3a4a';
+        ctx.fillRect(0, 0, W, H);
+
+        renderColony();
+        ctx.drawImage(off, 0, 0);
     }
 
-    // ── One simulation step ───────────────────────────────────────────────────
-    function step() {
-        tick++;
-        const T  = tick * 0.002;
-        const cr = colonyRadius;
-        const maxR = Math.min(cv.width, cv.height) * 0.47;
-        if (cr < maxR) colonyRadius += growthSpeed;
+    /* ════════════════════════════════════════════════════════════════
+       CONTROL PANEL WIRING
+    ════════════════════════════════════════════════════════════════ */
+    document.getElementById('toggle-btn').addEventListener('click', () =>
+        document.getElementById('control-panel').classList.toggle('hidden'));
 
-        // ── Noisy edge — 3 octaves for organic lumpy shape ────────────────────
-        const pts = new Float32Array(SEGS * 2);
-        for (let i = 0; i < SEGS; i++) {
-            const ang = (i / SEGS) * Math.PI * 2;
-            const ca  = Math.cos(ang), sa = Math.sin(ang);
-            const nv  = noise(ca * 2.5 + T * 0.30, sa * 2.5 + T * 0.25) * 0.45
-                      + noise(ca * 6.5 + T * 0.85, sa * 6.5 + T * 0.80) * 0.35
-                      + noise(ca * 14 + T * 1.60, sa * 14 + T * 1.50) * 0.20;
-            const r   = cr * (1.0 + (nv - 0.5) * fuzziness * 1.7);
-            pts[i * 2]     = cx + ca * r;
-            pts[i * 2 + 1] = cy + sa * r;
-        }
+    [
+        ['s-growthRate',   'v-growthRate',   'growthRate',   v => +v,  v => String(+v)      ],
+        ['s-noiseAmp',     'v-noiseAmp',     'noiseAmp',     v => +v,  v => String(+v)      ],
+        ['s-edgeFade',     'v-edgeFade',     'edgeFade',     v => +v,  v => String(+v)      ],
+        ['s-ringFreq',     'v-ringFreq',     'ringFreq',     v => +v,  v => (+v).toFixed(3) ],
+        ['s-ringWobble',   'v-ringWobble',   'ringWobble',   v => +v,  v => String(+v)      ],
+        ['s-fringeStart',  'v-fringeStart',  'fringeStart',  v => +v,  v => (+v).toFixed(2) ],
+        ['s-grainRange',   'v-grainRange',   'grainRange',   v => +v,  v => (+v).toFixed(2) ],
+        ['s-colorWarmth',  'v-colorWarmth',  'colorWarmth',  v => +v,  v => (+v).toFixed(2) ],
+    ].forEach(([sid, vid, key, parse, fmt]) => {
+        const sl = document.getElementById(sid);
+        const vl = document.getElementById(vid);
+        sl.addEventListener('input', () => { params[key] = parse(sl.value); vl.textContent = fmt(sl.value); });
+    });
 
-        // ── Main fill ─────────────────────────────────────────────────────────
-        const edgeR = cr * (1.0 + fuzziness * 0.6);
-        const grd   = ctx.createRadialGradient(cx, cy, 0, cx, cy, edgeR);
-        grd.addColorStop(0,    `hsla(21, ${Math.min(100, 68 * colorIntensity)}%, 48%, 0.016)`);
-        grd.addColorStop(0.30, `hsla(25, ${Math.min(100, 38 * colorIntensity)}%, 60%, 0.012)`);
-        grd.addColorStop(0.60, `hsla(30, ${Math.min(100, 14 * colorIntensity)}%, 80%, 0.008)`);
-        grd.addColorStop(0.82, `hsla(34, ${Math.min(100,  5 * colorIntensity)}%, 92%, 0.005)`);
-        grd.addColorStop(1.0,  `hsla(37, ${Math.min(100,  2 * colorIntensity)}%, 97%, 0.002)`);
-        ctx.beginPath();
-        ctx.moveTo(pts[0], pts[1]);
-        for (let i = 1; i < SEGS; i++) ctx.lineTo(pts[i * 2], pts[i * 2 + 1]);
-        ctx.closePath();
-        ctx.fillStyle = grd;
-        ctx.fill();
+    document.getElementById('pause-btn').addEventListener('click', () => {
+        paused = !paused;
+        document.getElementById('pause-btn').textContent = paused ? '▶ Resume' : '⏸ Pause';
+        if (!paused) lastTs = null;
+    });
 
-        // ── Cotton tufts at the frontier ──────────────────────────────────────
-        for (let i = 0; i < density * 4; i++) {
-            const idx = (Math.random() * SEGS) | 0;
-            const ex  = pts[idx * 2], ey = pts[idx * 2 + 1];
-            const bx  = ex + (Math.random() - 0.5) * cr * 0.06;
-            const by  = ey + (Math.random() - 0.5) * cr * 0.06;
-            const sz  = 2 + Math.random() * Math.random() * 12;
-            puff(bx, by, sz, 35,
-                 Math.min(100, (4 + Math.random() * 7) * colorIntensity),
-                 88 + Math.random() * 8, 0.04 + Math.random() * 0.04);
-        }
+    document.getElementById('restart-btn').addEventListener('click', () => {
+        currentRadius = 0;
+        simTime       = 0;
+        lastTs        = null;
+        paused        = false;
+        document.getElementById('pause-btn').textContent = '⏸ Pause';
+        ctx.fillStyle = '#2d3a4a';
+        ctx.fillRect(0, 0, W, H);
+    });
 
-        // ── Wispy tendrils beyond edge ────────────────────────────────────────
-        for (let i = 0; i < density * 2; i++) {
-            const idx = (Math.random() * SEGS) | 0;
-            const ex  = pts[idx * 2], ey = pts[idx * 2 + 1];
-            const dx  = ex - cx, dy = ey - cy;
-            const len = Math.sqrt(dx * dx + dy * dy) + 1e-6;
-            const bx  = ex + (dx / len) * (1 + Math.random() * cr * 0.05);
-            const by  = ey + (dy / len) * (1 + Math.random() * cr * 0.05);
-            puff(bx, by, 1 + Math.random() * 4, 36,
-                 Math.min(100, 4 * colorIntensity), 96, 0.07 + Math.random() * 0.05);
-        }
-
-        // ── Core every 8 ticks ────────────────────────────────────────────────
-        if (tick % 8 === 0) {
-            const ang = Math.random() * Math.PI * 2;
-            const r   = Math.random() * cr * 0.30;
-            puff(cx + Math.cos(ang) * r, cy + Math.sin(ang) * r,
-                 8 + Math.random() * 16, 20, Math.min(100, 72 * colorIntensity), 46, 0.030);
-        }
-    }
-
-    // ── Resize (debounced) ────────────────────────────────────────────────────
+    /* ════════════════════════════════════════════════════════════════
+       INIT
+    ════════════════════════════════════════════════════════════════ */
     let resizeTimer;
-    window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(init, 150); });
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+            resize();
+            currentRadius = 0;
+            simTime       = 0;
+            lastTs        = null;
+        }, 150);
+    });
 
-    // ── Boot ──────────────────────────────────────────────────────────────────
-    init();
+    resize();
+    requestAnimationFrame(frame);
     </script>
 </body>
 </html>
