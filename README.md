@@ -20,7 +20,7 @@ A single colony radius slowly expands from the center of the canvas. Every frame
 
 - **Dense, opaque golden-yellow center** — full-opacity pixels in the core, matching how real *C. militaris* develops carotenoid pigments
 - **Concentric amber band pattern** — a sine wave perturbed by 2D noise creates subtle ring-like color variation in the interior
-- **Cream/white fringe at the growing edge** — pixels in the outer 20 % of the colony radius lerp toward a creamy white
+- **Cream/white fringe at the growing edge** — pixels beyond a configurable threshold (default: outer 20 % of the colony radius) lerp toward a creamy white
 - **Organic edge shape** — three octaves of 2D Simplex noise irregularise the growing front so it is never a perfect circle
 - **Random grain texture** — a subtle `Math.random` micro-texture produces a soft, organic filament hint across the colony surface
 
@@ -130,7 +130,7 @@ Or visit the [live GitHub Pages site](https://adminnooot.github.io/cordyceps/) f
 | Ring Frequency | Frequency of concentric color bands |
 | Ring Wobble | Organic perturbation of the ring pattern |
 | Fringe Start | Where the cream fringe begins (as fraction of colony radius) |
-| Grain Intensity | Amplitude of the noise-based micro-texture |
+| Grain Intensity | Amplitude of the random micro-texture opacity variation |
 | Color Warmth | Amber-to-yellow bias of the interior color |
 | ⏸ Pause / ▶ Resume | Freeze / continue the simulation |
 | ↺ Restart | Re-initialize simulation from radius 0 |
