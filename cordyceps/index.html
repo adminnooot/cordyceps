@@ -31,7 +31,7 @@
             top: 50px;
             right: 12px;
             z-index: 10;
-            width: 260px;
+            width: 240px;
             background: rgba(12, 16, 20, 0.88);
             border: 1px solid rgba(255, 170, 80, 0.3);
             border-radius: 10px;
@@ -88,30 +88,21 @@
     <div id="canvas-parent"></div>
     <button id="toggle-btn">⚙ Controls</button>
     <div id="control-panel">
-        <div class="row"><div class="lab"><span>Speed</span><span id="v-speedMult">0.80</span></div><input id="s-speedMult" type="range" min="0.2" max="3.0" step="0.1" value="0.8"></div>
-        <div class="row"><div class="lab"><span>Max Active</span><span id="v-maxActive">400</span></div><input id="s-maxActive" type="range" min="100" max="800" step="25" value="400"></div>
-        <div class="row"><div class="lab"><span>Spawn Rate</span><span id="v-spawnRate">3</span></div><input id="s-spawnRate" type="range" min="1" max="15" step="1" value="3"></div>
-        <div class="row"><div class="lab"><span>Max Generations</span><span id="v-maxGen">9</span></div><input id="s-maxGen" type="range" min="2" max="15" step="1" value="9"></div>
-        <div class="row"><div class="lab"><span>Taper Rate</span><span id="v-taperRate">0.9990</span></div><input id="s-taperRate" type="range" min="0.990" max="0.9999" step="0.0001" value="0.999"></div>
-        <div class="row"><div class="lab"><span>Wander Scale</span><span id="v-wanderScale">0.30</span></div><input id="s-wanderScale" type="range" min="0.05" max="0.80" step="0.01" value="0.30"></div>
-        <div class="row"><div class="lab"><span>Branch Prob</span><span id="v-branchProb">0.100</span></div><input id="s-branchProb" type="range" min="0.01" max="0.40" step="0.005" value="0.10"></div>
-        <div class="row"><div class="lab"><span>Orange Intensity</span><span id="v-orangeIntensity">1.00</span></div><input id="s-orangeIntensity" type="range" min="0" max="2" step="0.05" value="1.0"></div>
+        <div class="row"><div class="lab"><span>Growth Speed</span><span id="v-growthSpeed">0.15</span></div><input id="s-growthSpeed" type="range" min="0.02" max="0.60" step="0.01" value="0.15"></div>
+        <div class="row"><div class="lab"><span>Edge Fuzziness</span><span id="v-fuzziness">0.28</span></div><input id="s-fuzziness" type="range" min="0.00" max="0.70" step="0.01" value="0.28"></div>
+        <div class="row"><div class="lab"><span>Puff Density</span><span id="v-density">22</span></div><input id="s-density" type="range" min="5" max="60" step="1" value="22"></div>
+        <div class="row"><div class="lab"><span>Orange Intensity</span><span id="v-colorIntensity">1.00</span></div><input id="s-colorIntensity" type="range" min="0.0" max="2.0" step="0.05" value="1.0"></div>
         <button id="restart-btn">↺ Restart</button>
     </div>
 
     <script>
-    let hyphae = [];
-    let originX, originY;
+    let colonyRadius, t, cx, cy, frameNum;
 
     let params = {
-        speedMult:       0.8,
-        maxActive:       400,
-        spawnRate:       3,
-        maxGen:          9,
-        taperRate:       0.999,
-        wanderScale:     0.30,
-        branchProb:      0.10,
-        orangeIntensity: 1.0,
+        growthSpeed:    0.15,
+        fuzziness:      0.28,
+        density:        22,
+        colorIntensity: 1.0,
     };
 
     // Toggle control panel
@@ -121,14 +112,10 @@
 
     // Wire up sliders
     const sliders = [
-        ['s-speedMult',       'v-speedMult',       'speedMult',       v => parseFloat(v),  v => parseFloat(v).toFixed(2)],
-        ['s-maxActive',       'v-maxActive',       'maxActive',       v => parseInt(v),     v => String(parseInt(v))],
-        ['s-spawnRate',       'v-spawnRate',       'spawnRate',       v => parseInt(v),     v => String(parseInt(v))],
-        ['s-maxGen',          'v-maxGen',          'maxGen',          v => parseInt(v),     v => String(parseInt(v))],
-        ['s-taperRate',       'v-taperRate',       'taperRate',       v => parseFloat(v),   v => parseFloat(v).toFixed(4)],
-        ['s-wanderScale',     'v-wanderScale',     'wanderScale',     v => parseFloat(v),   v => parseFloat(v).toFixed(2)],
-        ['s-branchProb',      'v-branchProb',      'branchProb',      v => parseFloat(v),   v => parseFloat(v).toFixed(3)],
-        ['s-orangeIntensity', 'v-orangeIntensity', 'orangeIntensity', v => parseFloat(v),   v => parseFloat(v).toFixed(2)],
+        ['s-growthSpeed',    'v-growthSpeed',    'growthSpeed',    v => parseFloat(v), v => parseFloat(v).toFixed(2)],
+        ['s-fuzziness',      'v-fuzziness',      'fuzziness',      v => parseFloat(v), v => parseFloat(v).toFixed(2)],
+        ['s-density',        'v-density',        'density',        v => parseInt(v),   v => String(parseInt(v))],
+        ['s-colorIntensity', 'v-colorIntensity', 'colorIntensity', v => parseFloat(v), v => parseFloat(v).toFixed(2)],
     ];
     sliders.forEach(([sid, vid, key, parse, fmt]) => {
         const s = document.getElementById(sid);
@@ -140,122 +127,114 @@
         if (typeof initSimulation === 'function') initSimulation();
     });
 
-    class Hypha {
-        constructor(x, y, angle, w, generation = 0) {
-            this.x          = x;
-            this.y          = y;
-            this.prevX      = x;
-            this.prevY      = y;
-            this.angle      = angle;
-            this.w          = w;
-            this.generation = generation;
-            this.speed      = random(0.7, 1.4) * Math.pow(0.85, generation) * params.speedMult;
-            this.stopped    = false;
-            this.noiseOffset = random(1000);
-            this.taperRate  = params.taperRate - generation * 0.0002;
-        }
-
-        update() {
-            this.prevX = this.x;
-            this.prevY = this.y;
-
-            // Perlin noise wander — higher than typical mycelium for cottony Cordyceps look
-            let noiseVal = noise(this.noiseOffset) - 0.5;
-            this.noiseOffset += 0.012;
-            this.angle += noiseVal * params.wanderScale;
-
-            // Weak outward bias from origin (weaker than generic mycelium → more tangled/cottony)
-            let outwardAngle = atan2(this.y - originY, this.x - originX);
-            let angleDiff = outwardAngle - this.angle;
-            while (angleDiff >  PI) angleDiff -= TWO_PI;
-            while (angleDiff < -PI) angleDiff += TWO_PI;
-            this.angle += angleDiff * 0.025;
-
-            // Move
-            this.x += cos(this.angle) * this.speed;
-            this.y += sin(this.angle) * this.speed;
-
-            // Taper
-            this.w *= this.taperRate;
-
-            // Stop conditions
-            if (this.w < 0.1) { this.stopped = true; return; }
-            if (this.x < -10 || this.x > width + 10 || this.y < -10 || this.y > height + 10) {
-                this.stopped = true; return;
-            }
-
-            // Probabilistic branching — higher probability for dense cottony growth
-            if (hyphae.length < params.maxActive && this.generation < params.maxGen) {
-                let branchP = params.branchProb * Math.pow(0.72, this.generation);
-                if (random() < branchP) {
-                    let branchAngle = this.angle + random(-0.9, 0.9);
-                    hyphae.push(new Hypha(this.x, this.y, branchAngle, this.w * 0.65, this.generation + 1));
-                }
-            }
-        }
-
-        draw() {
-            let d = Math.sqrt((this.x - originX) * (this.x - originX) + (this.y - originY) * (this.y - originY));
-            let maxD = Math.sqrt(width * width + height * height) * 0.4;
-            let centerBlend = constrain(1.0 - d / maxD, 0, 1);
-
-            // Hue: 38 (cream/off-white) at edges → 25 (warm orange) at center
-            let h = lerp(38, 25, centerBlend * centerBlend);
-            // Saturation: 8 (almost white) at edges → 70 (warm orange) at center
-            let s = lerp(8, 70, centerBlend * centerBlend) * params.orangeIntensity;
-            // Brightness: always high, slightly higher at center
-            let b = lerp(90, 100, centerBlend);
-
-            // Alpha: thicker strokes are more opaque; center is more opaque than edges
-            let alpha = (3 + 140 * ((this.w - 0.1) / 3.4)) * lerp(0.6, 1.0, centerBlend);
-
-            stroke(h, s, b, alpha);
-            strokeWeight(this.w);
-            line(this.prevX, this.prevY, this.x, this.y);
-
-            // Bright core glow on thicker hyphae near center — gives depth / aerial quality
-            if (this.w > 1.5 && centerBlend > 0.3) {
-                stroke(30, 60, 100, alpha * 0.4);
-                strokeWeight(this.w * 0.25);
-                line(this.prevX, this.prevY, this.x, this.y);
-            }
-        }
-    }
-
     function setup() {
         let parent = document.getElementById('canvas-parent');
         let canvas = createCanvas(parent.clientWidth, parent.clientHeight);
         canvas.parent('canvas-parent');
-        colorMode(HSB, 360, 100, 100, 255);
+        colorMode(HSB, 360, 100, 100, 100);
         initSimulation();
     }
 
     function initSimulation() {
-        background(8, 10, 7);
-        hyphae  = [];
-        originX = width  * 0.5;
-        originY = height * 0.5;
-        // Seed with a small initial burst; trickle-spawn continues in draw()
-        for (let i = 0; i < 12; i++) {
-            hyphae.push(new Hypha(originX, originY, random(TWO_PI), random(1.5, 3.5)));
+        background(10, 8, 6);
+        colonyRadius = 6;
+        t = 0;
+        frameNum = 0;
+        cx = width * 0.5;
+        cy = height * 0.5;
+
+        // Draw initial dense inoculation point
+        noStroke();
+        for (let r = 14; r > 0; r--) {
+            fill(24, 65 * params.colorIntensity, 90, map(r, 14, 0, 2, 28));
+            ellipse(cx, cy, r * 3, r * 3);
         }
     }
 
     function draw() {
-        // Trickle-spawn new hyphae from origin each frame — continuous biological growth
-        if (hyphae.length < params.maxActive) {
-            let toSpawn = Math.min(params.spawnRate, params.maxActive - hyphae.length);
-            for (let i = 0; i < toSpawn; i++) {
-                hyphae.push(new Hypha(originX, originY, random(TWO_PI), random(1.5, 3.5)));
-            }
+        t += 0.004;
+        frameNum++;
+
+        // Grow colony radius up to near canvas edge
+        let maxR = min(width, height) * 0.47;
+        if (colonyRadius < maxR) {
+            colonyRadius += params.growthSpeed;
         }
-        for (let i = hyphae.length - 1; i >= 0; i--) {
-            let h = hyphae[i];
-            h.update();
-            h.draw();
-            if (h.stopped) {
-                hyphae[i] = hyphae[hyphae.length - 1];
-                hyphae.pop();
+
+        noStroke();
+        let n = Math.max(1, Math.round(params.density));
+
+        for (let i = 0; i < n; i++) {
+            let angle = random(TWO_PI);
+
+            // Noise-displaced edge for organic, non-circular shape
+            let nv = noise(cos(angle) * 3.0 + t * 0.6, sin(angle) * 3.0 + t * 0.6);
+            let edgeR = colonyRadius * (1.0 + (nv - 0.5) * params.fuzziness);
+
+            // Distribute puffs across zones: mostly at growing edge, some in interior
+            let rPos;
+            let zone = random();
+            if (zone < 0.55) {
+                rPos = edgeR * random(0.78, 1.06);  // growing edge
+            } else if (zone < 0.80) {
+                rPos = edgeR * random(0.45, 0.78);  // mid zone
+            } else {
+                rPos = edgeR * random(0, 0.45);     // dense core
+            }
+
+            let x = cx + cos(angle) * rPos;
+            let y = cy + sin(angle) * rPos;
+
+            let dr = constrain(rPos / max(colonyRadius, 1), 0, 1.3);
+
+            let hue, sat, bri, alpha, sz;
+
+            if (dr < 0.35) {
+                // Core: warm orange-amber
+                hue   = lerp(20, 28, random());
+                sat   = lerp(58, 76, random()) * params.colorIntensity;
+                bri   = lerp(82, 94, random());
+                alpha = lerp(7, 20, random());
+                sz    = random(7, 22);
+            } else if (dr < 0.68) {
+                // Mid zone: cream-orange fading to off-white
+                hue   = lerp(27, 38, random());
+                sat   = lerp(14, 48, random()) * params.colorIntensity;
+                bri   = lerp(88, 98, random());
+                alpha = lerp(4, 11, random());
+                sz    = random(5, 16);
+            } else if (dr < 0.88) {
+                // Outer zone: mostly white with warm tinge
+                hue   = lerp(33, 50, random());
+                sat   = lerp(3, 14, random()) * params.colorIntensity;
+                bri   = lerp(93, 100, random());
+                alpha = lerp(2, 7, random());
+                sz    = random(4, 13);
+            } else {
+                // Wispy edge: nearly transparent
+                hue   = lerp(38, 58, random());
+                sat   = lerp(1, 7, random()) * params.colorIntensity;
+                bri   = lerp(94, 100, random());
+                alpha = lerp(1, 4, random());
+                sz    = random(3, 10);
+            }
+
+            // Inner puff
+            fill(hue, sat, bri, alpha);
+            ellipse(x, y, sz, sz);
+
+            // Soft outer halo — makes each puff look fluffy
+            fill(hue, sat * 0.35, bri, alpha * 0.28);
+            ellipse(x, y, sz * 2.5, sz * 2.5);
+        }
+
+        // Periodically reinforce center density so core stays rich and opaque
+        if (frameNum % 4 === 0) {
+            for (let i = 0; i < 6; i++) {
+                let angle = random(TWO_PI);
+                let r     = random(colonyRadius * 0.3);
+                fill(23, 68 * params.colorIntensity, 88, random(3, 12));
+                ellipse(cx + cos(angle) * r, cy + sin(angle) * r, random(6, 20), random(6, 20));
             }
         }
     }

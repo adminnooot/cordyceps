@@ -9,147 +9,123 @@
         *, *::before, *::after { box-sizing: border-box; }
         html, body { margin: 0; width: 100vw; height: 100dvh; overflow: hidden; background: #0c0e12; }
         #canvas-parent { width: 100%; height: 100%; }
-        #fade-top {
-            position: fixed;
-            top: 0; left: 0; right: 0;
-            height: 25vh;
-            pointer-events: none;
-            background: linear-gradient(to bottom, #0c0e12 0%, transparent 100%);
-            z-index: 5;
-        }
     </style>
 </head>
 <body>
     <div id="canvas-parent"></div>
-    <div id="fade-top"></div>
 
     <script>
-    let hyphae  = [];
-    let originX, originY;
+    let colonyRadius, t, cx, cy, frameNum;
 
-    let params = {
-        speedMult:       0.7,
-        maxActive:       200,
-        spawnRate:       2,
-        maxGen:          8,
-        taperRate:       0.999,
-        wanderScale:     0.30,
-        branchProb:      0.10,
-        orangeIntensity: 1.0,
-    };
-
-    class Hypha {
-        constructor(x, y, angle, w, generation = 0) {
-            this.x           = x;
-            this.y           = y;
-            this.prevX       = x;
-            this.prevY       = y;
-            this.angle       = angle;
-            this.w           = w;
-            this.generation  = generation;
-            this.speed       = random(0.7, 1.4) * Math.pow(0.85, generation) * params.speedMult;
-            this.stopped     = false;
-            this.noiseOffset = random(1000);
-            this.taperRate   = params.taperRate - generation * 0.0002;
-        }
-
-        update() {
-            this.prevX = this.x;
-            this.prevY = this.y;
-
-            // Perlin noise wander
-            let noiseVal = noise(this.noiseOffset) - 0.5;
-            this.noiseOffset += 0.012;
-            this.angle += noiseVal * params.wanderScale;
-
-            // Weak outward bias from origin
-            let outwardAngle = atan2(this.y - originY, this.x - originX);
-            let angleDiff = outwardAngle - this.angle;
-            while (angleDiff >  PI) angleDiff -= TWO_PI;
-            while (angleDiff < -PI) angleDiff += TWO_PI;
-            this.angle += angleDiff * 0.025;
-
-            // Move
-            this.x += cos(this.angle) * this.speed;
-            this.y += sin(this.angle) * this.speed;
-
-            // Taper
-            this.w *= this.taperRate;
-
-            // Stop conditions
-            if (this.w < 0.1) { this.stopped = true; return; }
-            if (this.x < -10 || this.x > width + 10 || this.y < -10 || this.y > height + 10) {
-                this.stopped = true; return;
-            }
-
-            // Branching
-            if (hyphae.length < params.maxActive && this.generation < params.maxGen) {
-                let branchP = params.branchProb * Math.pow(0.72, this.generation);
-                if (random() < branchP) {
-                    let branchAngle = this.angle + random(-0.9, 0.9);
-                    hyphae.push(new Hypha(this.x, this.y, branchAngle, this.w * 0.65, this.generation + 1));
-                }
-            }
-        }
-
-        draw() {
-            let d = Math.sqrt((this.x - originX) * (this.x - originX) + (this.y - originY) * (this.y - originY));
-            let maxD = Math.sqrt(width * width + height * height) * 0.4;
-            let centerBlend = constrain(1.0 - d / maxD, 0, 1);
-
-            let h = lerp(38, 25, centerBlend * centerBlend);
-            let s = lerp(8, 70, centerBlend * centerBlend) * params.orangeIntensity;
-            let b = lerp(90, 100, centerBlend);
-            let alpha = (3 + 140 * ((this.w - 0.1) / 3.4)) * lerp(0.6, 1.0, centerBlend);
-
-            stroke(h, s, b, alpha);
-            strokeWeight(this.w);
-            line(this.prevX, this.prevY, this.x, this.y);
-
-            if (this.w > 1.5 && centerBlend > 0.3) {
-                stroke(30, 60, 100, alpha * 0.4);
-                strokeWeight(this.w * 0.25);
-                line(this.prevX, this.prevY, this.x, this.y);
-            }
-        }
-    }
+    // Slightly reduced defaults vs desktop for better mobile performance
+    const growthSpeed    = 0.13;
+    const fuzziness      = 0.28;
+    const density        = 18;
+    const colorIntensity = 1.0;
 
     function setup() {
         let parent = document.getElementById('canvas-parent');
         let canvas = createCanvas(parent.clientWidth, parent.clientHeight);
         canvas.parent('canvas-parent');
-        colorMode(HSB, 360, 100, 100, 255);
+        colorMode(HSB, 360, 100, 100, 100);
         initSimulation();
     }
 
     function initSimulation() {
-        background(8, 10, 7);
-        hyphae  = [];
-        originX = width  * 0.5;
-        originY = height * 0.95;
-        // Seed with a small initial burst fanning upward; trickle-spawn continues in draw()
-        for (let i = 0; i < 8; i++) {
-            let angle = random(-PI + 0.3, -0.3);
-            hyphae.push(new Hypha(originX, originY, angle, random(1.5, 3.5)));
+        background(10, 8, 6);
+        colonyRadius = 6;
+        t = 0;
+        frameNum = 0;
+        cx = width * 0.5;
+        cy = height * 0.5;
+
+        // Draw initial dense inoculation point
+        noStroke();
+        for (let r = 14; r > 0; r--) {
+            fill(24, 65 * colorIntensity, 90, map(r, 14, 0, 2, 28));
+            ellipse(cx, cy, r * 3, r * 3);
         }
     }
 
     function draw() {
-        // Trickle-spawn new hyphae from origin each frame, fanning upward
-        if (hyphae.length < params.maxActive) {
-            let toSpawn = Math.min(params.spawnRate, params.maxActive - hyphae.length);
-            for (let i = 0; i < toSpawn; i++) {
-                let angle = random(-PI + 0.3, -0.3);
-                hyphae.push(new Hypha(originX, originY, angle, random(1.5, 3.5)));
-            }
+        t += 0.004;
+        frameNum++;
+
+        let maxR = min(width, height) * 0.47;
+        if (colonyRadius < maxR) {
+            colonyRadius += growthSpeed;
         }
-        for (let i = hyphae.length - 1; i >= 0; i--) {
-            let h = hyphae[i];
-            h.update();
-            h.draw();
-            if (h.stopped) {
-                hyphae[i] = hyphae[hyphae.length - 1];
-                hyphae.pop();
+
+        noStroke();
+        let n = Math.max(1, density);
+
+        for (let i = 0; i < n; i++) {
+            let angle = random(TWO_PI);
+
+            // Noise-displaced edge for organic, non-circular shape
+            let nv = noise(cos(angle) * 3.0 + t * 0.6, sin(angle) * 3.0 + t * 0.6);
+            let edgeR = colonyRadius * (1.0 + (nv - 0.5) * fuzziness);
+
+            // Distribute puffs across zones: mostly at growing edge, some in interior
+            let rPos;
+            let zone = random();
+            if (zone < 0.55) {
+                rPos = edgeR * random(0.78, 1.06);
+            } else if (zone < 0.80) {
+                rPos = edgeR * random(0.45, 0.78);
+            } else {
+                rPos = edgeR * random(0, 0.45);
+            }
+
+            let x = cx + cos(angle) * rPos;
+            let y = cy + sin(angle) * rPos;
+
+            let dr = constrain(rPos / max(colonyRadius, 1), 0, 1.3);
+
+            let hue, sat, bri, alpha, sz;
+
+            if (dr < 0.35) {
+                hue   = lerp(20, 28, random());
+                sat   = lerp(58, 76, random()) * colorIntensity;
+                bri   = lerp(82, 94, random());
+                alpha = lerp(7, 20, random());
+                sz    = random(7, 22);
+            } else if (dr < 0.68) {
+                hue   = lerp(27, 38, random());
+                sat   = lerp(14, 48, random()) * colorIntensity;
+                bri   = lerp(88, 98, random());
+                alpha = lerp(4, 11, random());
+                sz    = random(5, 16);
+            } else if (dr < 0.88) {
+                hue   = lerp(33, 50, random());
+                sat   = lerp(3, 14, random()) * colorIntensity;
+                bri   = lerp(93, 100, random());
+                alpha = lerp(2, 7, random());
+                sz    = random(4, 13);
+            } else {
+                hue   = lerp(38, 58, random());
+                sat   = lerp(1, 7, random()) * colorIntensity;
+                bri   = lerp(94, 100, random());
+                alpha = lerp(1, 4, random());
+                sz    = random(3, 10);
+            }
+
+            // Inner puff
+            fill(hue, sat, bri, alpha);
+            ellipse(x, y, sz, sz);
+
+            // Soft outer halo
+            fill(hue, sat * 0.35, bri, alpha * 0.28);
+            ellipse(x, y, sz * 2.5, sz * 2.5);
+        }
+
+        // Periodically reinforce center density
+        if (frameNum % 4 === 0) {
+            for (let i = 0; i < 6; i++) {
+                let angle = random(TWO_PI);
+                let r     = random(colonyRadius * 0.3);
+                fill(23, 68 * colorIntensity, 88, random(3, 12));
+                ellipse(cx + cos(angle) * r, cy + sin(angle) * r, random(6, 20), random(6, 20));
             }
         }
     }
