@@ -105,14 +105,14 @@
     <button id="toggle-btn">⚙ Controls</button>
     <div id="control-panel" class="hidden">
         <div class="sheet-handle"></div>
-        <div class="row"><div class="lab"><span>Growth Speed</span><span id="v-growthRate">15</span></div><input id="s-growthRate" type="range" min="1" max="50" step="1" value="15"></div>
-        <div class="row"><div class="lab"><span>Edge Noise Amplitude</span><span id="v-noiseAmp">30</span></div><input id="s-noiseAmp" type="range" min="0" max="80" step="1" value="30"></div>
-        <div class="row"><div class="lab"><span>Edge Softness</span><span id="v-edgeFade">20</span></div><input id="s-edgeFade" type="range" min="5" max="60" step="1" value="20"></div>
-        <div class="row"><div class="lab"><span>Ring Frequency</span><span id="v-ringFreq">0.040</span></div><input id="s-ringFreq" type="range" min="0.01" max="0.15" step="0.005" value="0.04"></div>
-        <div class="row"><div class="lab"><span>Ring Wobble</span><span id="v-ringWobble">25</span></div><input id="s-ringWobble" type="range" min="0" max="60" step="1" value="25"></div>
-        <div class="row"><div class="lab"><span>Fringe Start</span><span id="v-fringeStart">0.80</span></div><input id="s-fringeStart" type="range" min="0.50" max="0.99" step="0.01" value="0.80"></div>
-        <div class="row"><div class="lab"><span>Grain Intensity</span><span id="v-grainRange">0.15</span></div><input id="s-grainRange" type="range" min="0.0" max="0.5" step="0.01" value="0.15"></div>
-        <div class="row"><div class="lab"><span>Color Warmth</span><span id="v-colorWarmth">0.30</span></div><input id="s-colorWarmth" type="range" min="0.0" max="1.0" step="0.05" value="0.30"></div>
+        <div class="row"><div class="lab"><span>Growth Speed</span><span id="v-growthRate">14</span></div><input id="s-growthRate" type="range" min="1" max="50" step="1" value="14"></div>
+        <div class="row"><div class="lab"><span>Edge Noise Amplitude</span><span id="v-noiseAmp">8</span></div><input id="s-noiseAmp" type="range" min="0" max="80" step="1" value="8"></div>
+        <div class="row"><div class="lab"><span>Edge Softness</span><span id="v-edgeFade">29</span></div><input id="s-edgeFade" type="range" min="5" max="60" step="1" value="29"></div>
+        <div class="row"><div class="lab"><span>Ring Frequency</span><span id="v-ringFreq">0.145</span></div><input id="s-ringFreq" type="range" min="0.01" max="0.15" step="0.005" value="0.145"></div>
+        <div class="row"><div class="lab"><span>Ring Wobble</span><span id="v-ringWobble">24</span></div><input id="s-ringWobble" type="range" min="0" max="60" step="1" value="24"></div>
+        <div class="row"><div class="lab"><span>Fringe Start</span><span id="v-fringeStart">0.52</span></div><input id="s-fringeStart" type="range" min="0.50" max="0.99" step="0.01" value="0.52"></div>
+        <div class="row"><div class="lab"><span>Grain Intensity</span><span id="v-grainRange">0.05</span></div><input id="s-grainRange" type="range" min="0.0" max="0.5" step="0.01" value="0.05"></div>
+        <div class="row"><div class="lab"><span>Color Warmth</span><span id="v-colorWarmth">0.95</span></div><input id="s-colorWarmth" type="range" min="0.0" max="1.0" step="0.05" value="0.95"></div>
         <div class="btn-row">
             <button id="pause-btn" class="ctrl-btn">⏸ Pause</button>
             <button id="restart-btn" class="ctrl-btn">↺ Restart</button>
@@ -181,14 +181,14 @@
        SIMULATION PARAMETERS  (all sliders write into this object)
     ════════════════════════════════════════════════════════════════ */
     const params = {
-        growthRate:  15,    // px/s  (in virtual px)
-        noiseAmp:    30,    // px of radial noise distortion
-        edgeFade:    20,    // px of soft boundary fade
-        ringFreq:    0.04,  // sine wave multiplier for concentric bands
-        ringWobble:  25,    // noise perturbation strength on distance
-        fringeStart: 0.80,  // normalised radius where cream fringe begins
-        grainRange:  0.15,  // random opacity variation range
-        colorWarmth: 0.30,  // minimum t in colour calculation (0=amber, 1=yellow)
+        growthRate:  14,    // px/s  (in virtual px)
+        noiseAmp:    8,     // px of radial noise distortion
+        edgeFade:    29,    // px of soft boundary fade
+        ringFreq:    0.145, // sine wave multiplier for concentric bands
+        ringWobble:  24,    // noise perturbation strength on distance
+        fringeStart: 0.52,  // normalised radius where cream fringe begins
+        grainRange:  0.05,  // random opacity variation range
+        colorWarmth: 0.95,  // minimum t in colour calculation (0=amber, 1=yellow)
     };
 
     /* ════════════════════════════════════════════════════════════════
