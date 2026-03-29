@@ -4,11 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Cordyceps militaris Simulation</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
     <style>
         *, *::before, *::after { box-sizing: border-box; }
-        html, body { margin: 0; width: 100vw; height: 100dvh; overflow: hidden; background: #0c0e12; font-family: system-ui, sans-serif; }
-        #canvas-parent { width: 100%; height: 100%; }
+        html, body { margin: 0; width: 100vw; height: 100dvh; overflow: hidden; background: #0a0b09; font-family: system-ui, sans-serif; }
+        canvas { display: block; width: 100%; height: 100%; }
 
         #toggle-btn {
             position: fixed;
@@ -85,7 +84,7 @@
     </style>
 </head>
 <body>
-    <div id="canvas-parent"></div>
+    <canvas id="sim"></canvas>
     <button id="toggle-btn">⚙ Controls</button>
     <div id="control-panel">
         <div class="row"><div class="lab"><span>Growth Speed</span><span id="v-growthSpeed">0.15</span></div><input id="s-growthSpeed" type="range" min="0.02" max="0.60" step="0.01" value="0.15"></div>
@@ -96,153 +95,183 @@
     </div>
 
     <script>
-    let colonyRadius, t, cx, cy, frameNum;
+    'use strict';
 
-    let params = {
+    // ── Canvas setup ──────────────────────────────────────────────────────────
+    const cv  = document.getElementById('sim');
+    const ctx = cv.getContext('2d');
+
+    let colonyRadius, tick, cx, cy;
+    let rafId = null, lastStamp = 0;
+    const FRAME_MS = 1000 / 30;   // target 30 fps — halves CPU vs 60 fps
+
+    const params = {
         growthSpeed:    0.15,
         fuzziness:      0.28,
         density:        22,
         colorIntensity: 1.0,
     };
 
-    // Toggle control panel
-    const toggleBtn = document.getElementById('toggle-btn');
-    const panel     = document.getElementById('control-panel');
-    toggleBtn.addEventListener('click', () => panel.classList.toggle('hidden'));
-
-    // Wire up sliders
-    const sliders = [
-        ['s-growthSpeed',    'v-growthSpeed',    'growthSpeed',    v => parseFloat(v), v => parseFloat(v).toFixed(2)],
-        ['s-fuzziness',      'v-fuzziness',      'fuzziness',      v => parseFloat(v), v => parseFloat(v).toFixed(2)],
-        ['s-density',        'v-density',        'density',        v => parseInt(v),   v => String(parseInt(v))],
-        ['s-colorIntensity', 'v-colorIntensity', 'colorIntensity', v => parseFloat(v), v => parseFloat(v).toFixed(2)],
-    ];
-    sliders.forEach(([sid, vid, key, parse, fmt]) => {
-        const s = document.getElementById(sid);
-        const v = document.getElementById(vid);
-        s.addEventListener('input', () => { params[key] = parse(s.value); v.textContent = fmt(s.value); });
-    });
-
-    document.getElementById('restart-btn').addEventListener('click', () => {
-        if (typeof initSimulation === 'function') initSimulation();
-    });
-
-    function setup() {
-        let parent = document.getElementById('canvas-parent');
-        let canvas = createCanvas(parent.clientWidth, parent.clientHeight);
-        canvas.parent('canvas-parent');
-        colorMode(HSB, 360, 100, 100, 100);
-        initSimulation();
+    // ── Minimal smooth 2-D value noise (no external library) ─────────────────
+    function hash2D(x, y) {
+        const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+        return n - Math.floor(n);
+    }
+    function noise(x, y) {
+        const ix = Math.floor(x), iy = Math.floor(y);
+        const fx = x - ix,        fy = y - iy;
+        const ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy);
+        const a = hash2D(ix, iy),     b = hash2D(ix + 1, iy);
+        const c = hash2D(ix, iy + 1), d = hash2D(ix + 1, iy + 1);
+        return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
     }
 
-    function initSimulation() {
-        background(10, 8, 6);
+    // ── Draw one soft radial-gradient blob ───────────────────────────────────
+    function puff(x, y, sz, h, s, l, a) {
+        const grd = ctx.createRadialGradient(x, y, 0, x, y, sz);
+        grd.addColorStop(0, `hsla(${h},${s}%,${l}%,${a})`);
+        grd.addColorStop(1, `hsla(${h},${s}%,${l}%,0)`);
+        ctx.fillStyle = grd;
+        ctx.beginPath();
+        ctx.arc(x, y, sz, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // ── Initialise / restart simulation ──────────────────────────────────────
+    function init() {
+        if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+        cv.width  = cv.clientWidth  || window.innerWidth;
+        cv.height = cv.clientHeight || window.innerHeight;
+        cx = cv.width  * 0.5;
+        cy = cv.height * 0.5;
         colonyRadius = 6;
-        t = 0;
-        frameNum = 0;
-        cx = width * 0.5;
-        cy = height * 0.5;
+        tick = 0;
 
-        // Draw initial dense inoculation point
-        noStroke();
+        ctx.fillStyle = '#0a0b09';
+        ctx.fillRect(0, 0, cv.width, cv.height);
+
+        // Inoculation dot — warm orange rings from outside in
+        const ci = params.colorIntensity;
         for (let r = 14; r > 0; r--) {
-            fill(24, 65 * params.colorIntensity, 90, map(r, 14, 0, 2, 28));
-            ellipse(cx, cy, r * 3, r * 3);
+            const a = (14 - r) / 14 * 0.22 + 0.02;
+            puff(cx, cy, r * 2.4, 23, Math.min(100, 70 * ci), 55, a);
         }
+
+        lastStamp = 0;
+        rafId = requestAnimationFrame(frame);
     }
 
-    function draw() {
-        t += 0.004;
-        frameNum++;
+    // ── Animation loop (30 fps cap) ───────────────────────────────────────────
+    function frame(ts) {
+        rafId = requestAnimationFrame(frame);
+        const dt = ts - lastStamp;
+        if (dt < FRAME_MS) return;
+        lastStamp = ts - (dt % FRAME_MS);
+        step();
+    }
 
-        // Grow colony radius up to near canvas edge
-        let maxR = min(width, height) * 0.47;
-        if (colonyRadius < maxR) {
-            colonyRadius += params.growthSpeed;
-        }
+    // ── One simulation step ───────────────────────────────────────────────────
+    function step() {
+        tick++;
+        const T  = tick * 0.004;
+        const cr = colonyRadius;
+        const maxR = Math.min(cv.width, cv.height) * 0.47;
+        if (cr < maxR) colonyRadius += params.growthSpeed;
 
-        noStroke();
-        let n = Math.max(1, Math.round(params.density));
+        const n  = Math.max(1, params.density | 0);
+        const ci = params.colorIntensity;
+        const fz = params.fuzziness;
 
         for (let i = 0; i < n; i++) {
-            let angle = random(TWO_PI);
+            const ang = Math.random() * Math.PI * 2;
+            const ca  = Math.cos(ang), sa = Math.sin(ang);
 
-            // Noise-displaced edge for organic, non-circular shape
-            let nv = noise(cos(angle) * 3.0 + t * 0.6, sin(angle) * 3.0 + t * 0.6);
-            let edgeR = colonyRadius * (1.0 + (nv - 0.5) * params.fuzziness);
+            // Noise-deformed frontier radius
+            const nv    = noise(ca * 3.0 + T * 0.6, sa * 3.0 + T * 0.6);
+            const edgeR = cr * (1.0 + (nv - 0.5) * fz);
 
-            // Distribute puffs across zones: mostly at growing edge, some in interior
+            // Zone distribution: 55 % edge, 25 % mid, 20 % core
             let rPos;
-            let zone = random();
-            if (zone < 0.55) {
-                rPos = edgeR * random(0.78, 1.06);  // growing edge
-            } else if (zone < 0.80) {
-                rPos = edgeR * random(0.45, 0.78);  // mid zone
-            } else {
-                rPos = edgeR * random(0, 0.45);     // dense core
-            }
+            const zone = Math.random();
+            if (zone < 0.55)      rPos = edgeR * (0.78 + Math.random() * 0.28);
+            else if (zone < 0.80) rPos = edgeR * (0.45 + Math.random() * 0.33);
+            else                  rPos = edgeR *  Math.random() * 0.45;
 
-            let x = cx + cos(angle) * rPos;
-            let y = cy + sin(angle) * rPos;
+            const x  = cx + ca * rPos;
+            const y  = cy + sa * rPos;
+            const dr = Math.min(rPos / Math.max(cr, 1), 1.3);
 
-            let dr = constrain(rPos / max(colonyRadius, 1), 0, 1.3);
-
-            let hue, sat, bri, alpha, sz;
+            let h, s, l, a, sz;
 
             if (dr < 0.35) {
                 // Core: warm orange-amber
-                hue   = lerp(20, 28, random());
-                sat   = lerp(58, 76, random()) * params.colorIntensity;
-                bri   = lerp(82, 94, random());
-                alpha = lerp(7, 20, random());
-                sz    = random(7, 22);
+                h  = 20 + Math.random() * 8;
+                s  = Math.min(100, (55 + Math.random() * 20) * ci);
+                l  = 48 + Math.random() * 12;
+                a  = 0.07 + Math.random() * 0.13;
+                sz = 7   + Math.random() * 15;
             } else if (dr < 0.68) {
-                // Mid zone: cream-orange fading to off-white
-                hue   = lerp(27, 38, random());
-                sat   = lerp(14, 48, random()) * params.colorIntensity;
-                bri   = lerp(88, 98, random());
-                alpha = lerp(4, 11, random());
-                sz    = random(5, 16);
+                // Mid: cream-orange fading to off-white
+                h  = 27 + Math.random() * 11;
+                s  = Math.min(100, (30 + Math.random() * 62) * ci);
+                l  = 72 + Math.random() * 15;
+                a  = 0.04 + Math.random() * 0.07;
+                sz = 5   + Math.random() * 11;
             } else if (dr < 0.88) {
-                // Outer zone: mostly white with warm tinge
-                hue   = lerp(33, 50, random());
-                sat   = lerp(3, 14, random()) * params.colorIntensity;
-                bri   = lerp(93, 100, random());
-                alpha = lerp(2, 7, random());
-                sz    = random(4, 13);
+                // Outer: mostly white, warm tinge
+                h  = 33 + Math.random() * 17;
+                s  = Math.min(100, (3 + Math.random() * 9) * ci);
+                l  = 87 + Math.random() * 10;
+                a  = 0.02 + Math.random() * 0.05;
+                sz = 4   + Math.random() * 9;
             } else {
                 // Wispy edge: nearly transparent
-                hue   = lerp(38, 58, random());
-                sat   = lerp(1, 7, random()) * params.colorIntensity;
-                bri   = lerp(94, 100, random());
-                alpha = lerp(1, 4, random());
-                sz    = random(3, 10);
+                h  = 38 + Math.random() * 20;
+                s  = Math.min(100, (1 + Math.random() * 5) * ci);
+                l  = 93 + Math.random() * 7;
+                a  = 0.01 + Math.random() * 0.03;
+                sz = 3   + Math.random() * 7;
             }
 
-            // Inner puff
-            fill(hue, sat, bri, alpha);
-            ellipse(x, y, sz, sz);
-
-            // Soft outer halo — makes each puff look fluffy
-            fill(hue, sat * 0.35, bri, alpha * 0.28);
-            ellipse(x, y, sz * 2.5, sz * 2.5);
+            puff(x, y, sz,        h, s,        l, a);         // inner blob
+            puff(x, y, sz * 2.5,  h, s * 0.35, l, a * 0.28); // soft outer halo
         }
 
-        // Periodically reinforce center density so core stays rich and opaque
-        if (frameNum % 4 === 0) {
+        // Reinforce center density every 4 ticks
+        if (tick % 4 === 0) {
             for (let i = 0; i < 6; i++) {
-                let angle = random(TWO_PI);
-                let r     = random(colonyRadius * 0.3);
-                fill(23, 68 * params.colorIntensity, 88, random(3, 12));
-                ellipse(cx + cos(angle) * r, cy + sin(angle) * r, random(6, 20), random(6, 20));
+                const ang = Math.random() * Math.PI * 2;
+                const r   = Math.random() * cr * 0.3;
+                puff(cx + Math.cos(ang) * r, cy + Math.sin(ang) * r,
+                     4 + Math.random() * 10, 23, Math.min(100, 65 * ci), 52,
+                     0.03 + Math.random() * 0.09);
             }
         }
     }
 
-    function windowResized() {
-        resizeCanvas(windowWidth, windowHeight);
-        initSimulation();
-    }
+    // ── Control panel wiring ─────────────────────────────────────────────────
+    document.getElementById('toggle-btn').addEventListener('click', () =>
+        document.getElementById('control-panel').classList.toggle('hidden'));
+
+    [
+        ['s-growthSpeed',    'v-growthSpeed',    'growthSpeed',    v => +v,  v => (+v).toFixed(2)],
+        ['s-fuzziness',      'v-fuzziness',      'fuzziness',      v => +v,  v => (+v).toFixed(2)],
+        ['s-density',        'v-density',        'density',        v => v|0, v => String(v|0)     ],
+        ['s-colorIntensity', 'v-colorIntensity', 'colorIntensity', v => +v,  v => (+v).toFixed(2)],
+    ].forEach(([sid, vid, key, parse, fmt]) => {
+        const sl = document.getElementById(sid);
+        const vl = document.getElementById(vid);
+        sl.addEventListener('input', () => { params[key] = parse(sl.value); vl.textContent = fmt(sl.value); });
+    });
+
+    document.getElementById('restart-btn').addEventListener('click', init);
+
+    // ── Resize (debounced) ────────────────────────────────────────────────────
+    let resizeTimer;
+    window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(init, 150); });
+
+    // ── Boot ──────────────────────────────────────────────────────────────────
+    init();
     </script>
 </body>
 </html>
