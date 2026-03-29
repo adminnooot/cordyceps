@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cordyceps Growth Simulation</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #2d3a4a;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  overflow: hidden;
+  font-family: 'Segoe UI', Tahoma, Geneva, sans-serif;
+  color: #d4dce6;
+}
+
+h1 {
+  font-size: clamp(0.9rem, 2.5vw, 1.35rem);
+  font-weight: 300;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+  opacity: 0.80;
+  text-shadow: 0 2px 10px rgba(0,0,0,0.55);
+  flex-shrink: 0;
+}
+
+#info {
+  margin-top: 10px;
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  opacity: 0.50;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+#sim {
+  display: block;
+  flex-shrink: 0;
+}
+</style>
+</head>
+<body>
+<h1>Cordyceps Growth Simulation</h1>
+<canvas id="sim"></canvas>
+<div id="info">Radius: 0.0 px &nbsp;|&nbsp; Time: 0.0 s</div>
+
+<script>
+'use strict';
+
+/* ════════════════════════════════════════════════════════════════
+   2D SIMPLEX NOISE  (Stefan Gustavson's algorithm — inline)
+   Returns values in the range [-1, 1]
+════════════════════════════════════════════════════════════════ */
+const Noise = (() => {
+  // 12 gradient directions (only x,y components used for 2D)
+  const grad3 = new Float32Array([
+     1, 1, 0,  -1, 1, 0,   1,-1, 0,  -1,-1, 0,
+     1, 0, 1,  -1, 0, 1,   1, 0,-1,  -1, 0,-1,
+     0, 1, 1,   0,-1, 1,   0, 1,-1,   0,-1,-1
+  ]);
+
+  const perm       = new Uint8Array(512);
+  const permMod12  = new Uint8Array(512);
+
+  // Build deterministic permutation table (seed 42)
+  (function buildPerm() {
+    const p = new Uint8Array(256);
+    for (let i = 0; i < 256; i++) p[i] = i;
+    let s = 42;
+    for (let i = 255; i > 0; i--) {
+      s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+      const j = s % (i + 1);
+      const t = p[i]; p[i] = p[j]; p[j] = t;
+    }
+    for (let i = 0; i < 512; i++) {
+      perm[i]      = p[i & 255];
+      permMod12[i] = perm[i] % 12;
+    }
+  })();
+
+  const F2 = 0.5 * (Math.sqrt(3) - 1);
+  const G2 = (3 - Math.sqrt(3)) / 6;
+
+  function noise2d(xin, yin) {
+    const s  = (xin + yin) * F2;
+    const i  = Math.floor(xin + s) | 0;
+    const j  = Math.floor(yin + s) | 0;
+    const t  = (i + j) * G2;
+    const X0 = i - t,  Y0 = j - t;
+    const x0 = xin - X0, y0 = yin - Y0;
+
+    let i1, j1;
+    if (x0 > y0) { i1 = 1; j1 = 0; } else { i1 = 0; j1 = 1; }
+
+    const x1 = x0 - i1 + G2,     y1 = y0 - j1 + G2;
+    const x2 = x0 - 1 + 2 * G2,  y2 = y0 - 1 + 2 * G2;
+
+    const ii  = i & 255,  jj  = j & 255;
+    const gi0 = permMod12[ii      + perm[jj     ]];
+    const gi1 = permMod12[ii + i1 + perm[jj + j1]];
+    const gi2 = permMod12[ii + 1  + perm[jj + 1 ]];
+
+    let n0 = 0, n1 = 0, n2 = 0;
+    let t0 = 0.5 - x0*x0 - y0*y0;
+    if (t0 >= 0) { t0 *= t0; n0 = t0*t0 * (grad3[gi0*3]*x0 + grad3[gi0*3+1]*y0); }
+    let t1 = 0.5 - x1*x1 - y1*y1;
+    if (t1 >= 0) { t1 *= t1; n1 = t1*t1 * (grad3[gi1*3]*x1 + grad3[gi1*3+1]*y1); }
+    let t2 = 0.5 - x2*x2 - y2*y2;
+    if (t2 >= 0) { t2 *= t2; n2 = t2*t2 * (grad3[gi2*3]*x2 + grad3[gi2*3+1]*y2); }
+
+    return 70 * (n0 + n1 + n2);  // [-1, 1]
+  }
+
+  return { noise2d };
+})();
+
+/* ════════════════════════════════════════════════════════════════
+   CANVAS / OFFSCREEN SETUP
+════════════════════════════════════════════════════════════════ */
+const cv   = document.getElementById('sim');
+const ctx  = cv.getContext('2d');
+const info = document.getElementById('info');
+
+// Offscreen canvas — receives ImageData colony pixels
+const off  = document.createElement('canvas');
+const octx = off.getContext('2d', { willReadFrequently: true });
+
+let W, H, cx, cy, maxR;
+
+function resize() {
+  // Fill most of the viewport, leaving room for title + info
+  W = Math.min(Math.floor(window.innerWidth  * 0.98), 700);
+  H = Math.min(Math.floor(window.innerHeight * 0.78), 700);
+  cv.width  = W;
+  cv.height = H;
+  off.width  = W;
+  off.height = H;
+  cx = W / 2;
+  cy = H / 2;
+  // Max radius = distance from center to farthest corner
+  maxR = Math.sqrt(cx * cx + cy * cy);
+}
+
+/* ════════════════════════════════════════════════════════════════
+   NOISE ANGLE CACHE
+   Pre-compute multi-octave noise for each angle step so we only
+   run the noise function 1440 times per frame instead of once per pixel.
+════════════════════════════════════════════════════════════════ */
+const ANGLE_STEPS = 1440;
+const noiseCache  = new Float32Array(ANGLE_STEPS);
+const TWO_PI      = Math.PI * 2;
+
+function updateNoiseCache(t) {
+  for (let i = 0; i < ANGLE_STEPS; i++) {
+    const theta = (i / ANGLE_STEPS) * TWO_PI;
+    const cosT  = Math.cos(theta);
+    const sinT  = Math.sin(theta);
+    // Three octaves: coarse shape, medium ripple, fine filament detail
+    const n =
+      Noise.noise2d(cosT * 2.2  + t * 0.25,  sinT * 2.2  + t * 0.25)  * 0.55 +
+      Noise.noise2d(cosT * 5.5  + t * 0.70,  sinT * 5.5  + t * 0.70)  * 0.30 +
+      Noise.noise2d(cosT * 12.0 + t * 1.50,  sinT * 12.0 + t * 1.50)  * 0.15;
+    noiseCache[i] = n;   // [-1, 1]
+  }
+}
+
+function getNoiseForAngle(theta) {
+  const raw = ((theta / TWO_PI) * ANGLE_STEPS + ANGLE_STEPS) % ANGLE_STEPS;
+  const i0  = raw | 0;
+  const i1  = (i0 + 1) % ANGLE_STEPS;
+  const f   = raw - i0;
+  return noiseCache[i0] * (1 - f) + noiseCache[i1] * f;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   SIMULATION STATE
+════════════════════════════════════════════════════════════════ */
+let currentRadius = 0;
+let simTime       = 0;
+let lastTs        = null;
+
+// Growth speed: ~0.25 px/frame at 60 fps = 15 px/s
+const GROWTH_RATE = 15;   // px/s
+const NOISE_AMP   = 30;   // px of radial noise distortion
+const EDGE_FADE   = 20;   // px of soft fade at the colony boundary
+
+/* ════════════════════════════════════════════════════════════════
+   COLONY RENDER  (pixel-level via ImageData)
+════════════════════════════════════════════════════════════════ */
+function renderColony() {
+  if (currentRadius < 0.5) return;
+
+  const imgData = octx.createImageData(W, H);
+  const data    = imgData.data;
+
+  // Largest possible noisy radius for this frame (quick-reject bound)
+  const boundR  = currentRadius + NOISE_AMP + EDGE_FADE;
+  const boundR2 = boundR * boundR;
+
+  for (let py = 0; py < H; py++) {
+    const dy = py - cy;
+    const dy2 = dy * dy;
+    if (dy2 > boundR2) continue;   // entire row is outside → skip
+
+    for (let px = 0; px < W; px++) {
+      const dx  = px - cx;
+      const r2  = dx * dx + dy2;
+      if (r2 > boundR2) continue;  // quick reject
+
+      const r       = Math.sqrt(r2);
+      const theta   = Math.atan2(dy, dx);
+      const nv      = getNoiseForAngle(theta);
+      const targetR = currentRadius + nv * NOISE_AMP;
+
+      if (r > targetR + EDGE_FADE) continue;
+
+      // Smooth (smoothstep) edge fade
+      let alpha;
+      if (r <= targetR - EDGE_FADE) {
+        alpha = 1.0;
+      } else {
+        const u = (targetR + EDGE_FADE - r) / (EDGE_FADE * 2);
+        alpha   = u * u * (3 - 2 * u);   // smoothstep
+        if (alpha <= 0) continue;
+      }
+
+      // ── Concentric ring colour (sine wave over radius) ──────────
+      const wave = Math.sin(r * 0.2);
+      let R, G, B;
+      if (wave > 0.3) {
+        // Vibrant Yellow #F1C40F
+        R = 241; G = 196; B = 15;
+      } else if (wave < -0.3) {
+        // Off-White #FDFEFE
+        R = 253; G = 254; B = 254;
+      } else {
+        // Soft blend between Off-White and Yellow
+        const t = (wave + 0.3) / 0.6;   // 0 → off-white, 1 → yellow
+        R = (253 + t * (241 - 253)) | 0;
+        G = (254 + t * (196 - 254)) | 0;
+        B = (254 + t * ( 15 - 254)) | 0;
+      }
+
+      // ── Micro-texture grain (simulates mycelium filaments) ──────
+      const grain = 0.7 + Math.random() * 0.3;
+      alpha *= grain;
+
+      const i4 = (py * W + px) * 4;
+      data[i4    ] = R;
+      data[i4 + 1] = G;
+      data[i4 + 2] = B;
+      data[i4 + 3] = (alpha * 255) | 0;
+    }
+  }
+
+  octx.putImageData(imgData, 0, 0);
+}
+
+/* ════════════════════════════════════════════════════════════════
+   ANIMATION LOOP
+════════════════════════════════════════════════════════════════ */
+function frame(ts) {
+  requestAnimationFrame(frame);
+
+  if (lastTs === null) lastTs = ts;
+  const dt = Math.min((ts - lastTs) / 1000, 0.05);  // cap to 50 ms
+  lastTs = ts;
+
+  simTime       += dt;
+  // Grow until the colony covers the farthest corner of the canvas
+  currentRadius  = Math.min(currentRadius + GROWTH_RATE * dt, maxR + NOISE_AMP);
+
+  // Rebuild noise cache with slowly-advancing time
+  updateNoiseCache(simTime * 0.4);
+
+  // ── Draw ──────────────────────────────────────────────────────
+  // 1. Dark background
+  ctx.fillStyle = '#2d3a4a';
+  ctx.fillRect(0, 0, W, H);
+
+  // 2. Colony pixels onto offscreen canvas, then composite
+  renderColony();
+  ctx.drawImage(off, 0, 0);
+
+  // 3. Info panel
+  info.textContent =
+    `Radius: ${currentRadius.toFixed(1)} px\u2002|\u2002Time: ${simTime.toFixed(1)} s`;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   INIT
+════════════════════════════════════════════════════════════════ */
+let resizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(resize, 150);
+});
+
+resize();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
