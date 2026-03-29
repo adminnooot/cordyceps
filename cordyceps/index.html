@@ -1,40 +1,482 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Cordyceps Militaris Simulation</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Cordyceps militaris Petri Colony (p5.js)</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0;
+      width: 100vw; height: 100dvh;
+      overflow: hidden;
+      background: #050505;
+      font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+      touch-action: none;
+    }
+    #canvas-parent { width: 100%; height: 100%; }
+
+    #toggle-btn {
+      position: fixed; top: 12px; left: 12px; z-index: 200;
+      background: rgba(20, 24, 30, 0.85);
+      color: #ffe6c7;
+      border: 1px solid rgba(255, 170, 80, 0.35);
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-size: 13px;
+      cursor: pointer;
+      backdrop-filter: blur(6px);
+      user-select: none;
+    }
+    #control-panel {
+      position: fixed; top: 46px; left: 12px; z-index: 100;
+      width: 280px;
+      max-height: calc(100vh - 60px);
+      overflow-y: auto;
+      background: rgba(12, 16, 20, 0.88);
+      border: 1px solid rgba(255, 170, 80, 0.25);
+      border-radius: 10px;
+      padding: 14px 16px 16px;
+      color: #ffeedd;
+      backdrop-filter: blur(8px);
+      transition: opacity 0.2s, transform 0.2s;
+    }
+    #control-panel.hidden { opacity: 0; pointer-events: none; transform: translateY(-8px); }
+    #control-panel h3 {
+      margin: 0 0 12px;
+      font-size: 13px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: rgba(255, 190, 120, 0.85);
+      font-weight: 650;
+    }
+    .ctrl-row { margin-bottom: 11px; }
+    .ctrl-label {
+      display: flex; justify-content: space-between; align-items: baseline;
+      margin-bottom: 4px;
+      font-size: 12px;
+      color: #ffddb6;
+    }
+    .ctrl-label span.val {
+      font-variant-numeric: tabular-nums;
+      color: #fff2e3;
+      min-width: 64px;
+      text-align: right;
+    }
+    input[type="range"] { width: 100%; cursor: pointer; }
+    #restart-btn {
+      margin-top: 14px; width: 100%;
+      padding: 8px 0;
+      background: rgba(255, 170, 80, 0.15);
+      color: #ffd9b0;
+      border: 1px solid rgba(255, 170, 80, 0.45);
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 650;
+      letter-spacing: 0.05em;
+      cursor: pointer;
+    }
+  </style>
 </head>
+
 <body>
-    <h1>Cordyceps Militaris Petri Colony Simulation</h1>
-    <p>Adjust the parameters below to simulate the growth of a Cordyceps militaris petri colony.</p>
-    <div>
-        <label for="orangeStart">Orange Start:</label>
-        <input type="range" id="orangeStart" min="0" max="10" value="5"><br>
-        <label for="orangeRamp">Orange Ramp:</label>
-        <input type="range" id="orangeRamp" min="0.1" max="1" step="0.1" value="0.5"><br>
-        <label for="orangeMax">Orange Max:</label>
-        <input type="range" id="orangeMax" min="0" max="10" value="8"><br>
-        <label for="orangeCenterBias">Orange Center Bias:</label>
-        <input type="range" id="orangeCenterBias" min="0" max="1" step="0.1" value="0.5"><br>
-        <label for="light">Light:</label>
-        <input type="range" id="light" min="0" max="10" value="5"><br>
-        <label for="speed">Speed:</label>
-        <input type="range" id="speed" min="1" max="10" value="5"><br>
-        <label for="tips">Tips:</label>
-        <input type="range" id="tips" min="1" max="10" value="2"><br>
-        <label for="inoculumRadius">Inoculum Radius:</label>
-        <input type="range" id="inoculumRadius" min="0" max="10" value="3"><br>
+  <div id="canvas-parent"></div>
+
+  <button id="toggle-btn" title="Toggle controls">⚙ Controls</button>
+
+  <div id="control-panel">
+    <h3>C. militaris (Petri) Controls</h3>
+
+    <div class="ctrl-row">
+      <div class="ctrl-label"><span>Speed</span><span class="val" id="v-speed">1.00</span></div>
+      <input type="range" id="s-speed" min="0.2" max="4.0" step="0.1" value="1.0">
     </div>
-    <script>
-        // p5.js simulation code goes here
-        function setup() {
-            createCanvas(800, 600);
-            // Initialization code
+
+    <div class="ctrl-row">
+      <div class="ctrl-label"><span>Tips (max)</span><span class="val" id="v-tips">4500</span></div>
+      <input type="range" id="s-tips" min="200" max="12000" step="100" value="4500">
+    </div>
+
+    <div class="ctrl-row">
+      <div class="ctrl-label"><span>Initial tips</span><span class="val" id="v-init">120</span></div>
+      <input type="range" id="s-init" min="10" max="800" step="10" value="120">
+    </div>
+
+    <div class="ctrl-row">
+      <div class="ctrl-label"><span>Inoculum radius</span><span class="val" id="v-inoc">6 px</span></div>
+      <input type="range" id="s-inoc" min="1" max="40" step="1" value="6">
+    </div>
+
+    <div class="ctrl-row">
+      <div class="ctrl-label"><span>Branchiness</span><span class="val" id="v-branch">0.18</span></div>
+      <input type="range" id="s-branch" min="0.01" max="0.55" step="0.01" value="0.18">
+    </div>
+
+    <div class="ctrl-row">
+      <div class="ctrl-label"><span>Cottony (thickness)</span><span class="val" id="v-cotton">0.75</span></div>
+      <input type="range" id="s-cotton" min="0.10" max="1.80" step="0.05" value="0.75">
+    </div>
+
+    <div class="ctrl-row">
+      <div class="ctrl-label"><span>Ring tendency</span><span class="val" id="v-rings">0.55</span></div>
+      <input type="range" id="s-rings" min="0.0" max="1.0" step="0.05" value="0.55">
+    </div>
+
+    <div class="ctrl-row">
+      <div class="ctrl-label"><span>Light (enables orange)</span><span class="val" id="v-light">0.80</span></div>
+      <input type="range" id="s-light" min="0.0" max="1.0" step="0.05" value="0.80">
+    </div>
+
+    <div class="ctrl-row">
+      <div class="ctrl-label"><span>Orange start (delay)</span><span class="val" id="v-ostart">0.35</span></div>
+      <input type="range" id="s-ostart" min="0.0" max="0.95" step="0.01" value="0.35">
+    </div>
+
+    <div class="ctrl-row">
+      <div class="ctrl-label"><span>Orange ramp (rate)</span><span class="val" id="v-oramp">2.40</span></div>
+      <input type="range" id="s-oramp" min="0.2" max="8.0" step="0.1" value="2.4">
+    </div>
+
+    <div class="ctrl-row">
+      <div class="ctrl-label"><span>Orange max</span><span class="val" id="v-omax">0.85</span></div>
+      <input type="range" id="s-omax" min="0.0" max="1.0" step="0.01" value="0.85">
+    </div>
+
+    <div class="ctrl-row">
+      <div class="ctrl-label"><span>Orange center bias</span><span class="val" id="v-ocb">0.65</span></div>
+      <input type="range" id="s-ocb" min="0.0" max="1.0" step="0.01" value="0.65">
+    </div>
+
+    <div class="ctrl-row">
+      <div class="ctrl-label"><span>Orange hue</span><span class="val" id="v-hue">28</span></div>
+      <input type="range" id="s-hue" min="10" max="45" step="1" value="28">
+    </div>
+
+    <div class="ctrl-row">
+      <div class="ctrl-label"><span>Plate radius</span><span class="val" id="v-rad">0.46</span></div>
+      <input type="range" id="s-rad" min="0.30" max="0.49" step="0.01" value="0.46">
+    </div>
+
+    <button id="restart-btn">↺ Restart</button>
+  </div>
+
+  <script>
+    const params = {
+      speedMult: 1.0,
+      maxTips: 4500,
+      initTips: 120,
+      inocRadiusPx: 6,
+
+      branchiness: 0.18,
+      cotton: 0.75,
+      rings: 0.55,
+
+      light: 0.80,
+
+      // orange transition controls
+      orangeStart: 0.35,
+      orangeRamp: 2.4,
+      orangeMax: 0.85,
+      orangeCenterBias: 0.65,
+
+      orangeHue: 28,
+      plateRadius: 0.46
+    };
+
+    const sliders = [
+      { s:'s-speed',  v:'v-speed',  key:'speedMult', fmt:x=>Number(x).toFixed(2), parse:parseFloat },
+      { s:'s-tips',   v:'v-tips',   key:'maxTips',   fmt:x=>String(Math.floor(x)), parse:(x)=>parseInt(x,10) },
+      { s:'s-init',   v:'v-init',   key:'initTips',  fmt:x=>String(Math.floor(x)), parse:(x)=>parseInt(x,10) },
+      { s:'s-inoc',   v:'v-inoc',   key:'inocRadiusPx', fmt:x=>`${Math.floor(x)} px`, parse:(x)=>parseInt(x,10) },
+
+      { s:'s-branch', v:'v-branch', key:'branchiness', fmt:x=>Number(x).toFixed(2), parse:parseFloat },
+      { s:'s-cotton', v:'v-cotton', key:'cotton',      fmt:x=>Number(x).toFixed(2), parse:parseFloat },
+      { s:'s-rings',  v:'v-rings',  key:'rings',       fmt:x=>Number(x).toFixed(2), parse:parseFloat },
+
+      { s:'s-light',  v:'v-light',  key:'light',       fmt:x=>Number(x).toFixed(2), parse:parseFloat },
+
+      { s:'s-ostart', v:'v-ostart', key:'orangeStart', fmt:x=>Number(x).toFixed(2), parse:parseFloat },
+      { s:'s-oramp',  v:'v-oramp',  key:'orangeRamp',  fmt:x=>Number(x).toFixed(2), parse:parseFloat },
+      { s:'s-omax',   v:'v-omax',   key:'orangeMax',   fmt:x=>Number(x).toFixed(2), parse:parseFloat },
+      { s:'s-ocb',    v:'v-ocb',    key:'orangeCenterBias', fmt:x=>Number(x).toFixed(2), parse:parseFloat },
+
+      { s:'s-hue',    v:'v-hue',    key:'orangeHue',   fmt:x=>String(Math.floor(x)), parse:(x)=>parseInt(x,10) },
+      { s:'s-rad',    v:'v-rad',    key:'plateRadius', fmt:x=>Number(x).toFixed(2), parse:parseFloat },
+    ];
+
+    sliders.forEach(({s,v,key,fmt,parse})=>{
+      const elS = document.getElementById(s);
+      const elV = document.getElementById(v);
+      elS.addEventListener('input', ()=>{
+        params[key] = parse(elS.value);
+        elV.textContent = fmt(elS.value);
+      });
+    });
+
+    const panel = document.getElementById('control-panel');
+    const toggleBtn = document.getElementById('toggle-btn');
+    toggleBtn.addEventListener('click', ()=>{
+      panel.classList.toggle('hidden');
+      toggleBtn.textContent = panel.classList.contains('hidden') ? '⚙ Controls' : '✕ Hide';
+    });
+
+    document.getElementById('restart-btn').addEventListener('click', ()=> initSimulation());
+
+    let tips = [];
+    let origin;
+    let plateR;
+    let lastW;
+
+    let gridScale = 3;
+    let gw, gh;
+    let nutrient;
+    let deposit;
+    let orange;
+    let pg;
+
+    function idx(ix, iy) { return ix + iy * gw; }
+
+    function setup() {
+      const parent = document.getElementById('canvas-parent');
+      const c = createCanvas(parent.clientWidth, parent.clientHeight);
+      c.parent('canvas-parent');
+      colorMode(HSB, 360, 100, 100, 255);
+      lastW = window.innerWidth;
+      initSimulation();
+    }
+
+    function initSimulation() {
+      background(0, 0, 7);
+
+      origin = createVector(width * 0.5, height * 0.5);
+      plateR = min(width, height) * params.plateRadius;
+
+      gw = Math.floor(width / gridScale);
+      gh = Math.floor(height / gridScale);
+      nutrient = new Float32Array(gw * gh);
+      deposit  = new Float32Array(gw * gh);
+      orange   = new Float32Array(gw * gh);
+
+      for (let y = 0; y < gh; y++) {
+        for (let x = 0; x < gw; x++) {
+          const px = (x + 0.5) * gridScale;
+          const py = (y + 0.5) * gridScale;
+          const d = dist(px, py, origin.x, origin.y);
+          const inPlate = d <= plateR ? 1 : 0;
+          const base = inPlate * (1.0 - (d / plateR) * 0.30);
+          const n = (noise(x * 0.06, y * 0.06) - 0.5) * 0.08;
+          nutrient[idx(x,y)] = max(0, base + n);
+          deposit[idx(x,y)]  = 0;
+          orange[idx(x,y)]   = 0;
+        }
+      }
+
+      pg = createGraphics(gw, gh);
+      pg.colorMode(HSB, 360, 100, 100, 255);
+      pg.noSmooth();
+
+      tips = [];
+      const inocR = params.inocRadiusPx;
+      for (let i = 0; i < params.initTips; i++) {
+        const a = random(TWO_PI);
+        const r = sqrt(random()) * inocR;
+        tips.push(new Tip(origin.x + cos(a)*r, origin.y + sin(a)*r, a, 0));
+      }
+    }
+
+    function draw() {
+      const steps = Math.max(1, Math.floor(2 * params.speedMult));
+      for (let s = 0; s < steps; s++) stepSimulation();
+      renderPlate();
+    }
+
+    function stepSimulation() {
+      for (let i = tips.length - 1; i >= 0; i--) {
+        const t = tips[i];
+        t.update();
+        if (t.dead) {
+          tips[i] = tips[tips.length - 1];
+          tips.pop();
+        }
+      }
+    }
+
+    class Tip {
+      constructor(x, y, a, gen) {
+        this.x = x; this.y = y;
+        this.a = a;
+        this.gen = gen;
+        this.age = 0;
+        this.no = random(1000);
+        this.dead = false;
+        this.stepLen = random(0.7, 1.6) * pow(0.88, gen);
+      }
+
+      update() {
+        this.age++;
+
+        const d = dist(this.x, this.y, origin.x, origin.y);
+        if (d > plateR) { this.dead = true; return; }
+
+        const gx0 = Math.floor(this.x / gridScale);
+        const gy0 = Math.floor(this.y / gridScale);
+        if (gx0 < 1 || gy0 < 1 || gx0 >= gw-1 || gy0 >= gh-1) { this.dead = true; return; }
+
+        const c = nutrient[idx(gx0, gy0)];
+        const nx = nutrient[idx(gx0+1, gy0)] - nutrient[idx(gx0-1, gy0)];
+        const ny = nutrient[idx(gx0, gy0+1)] - nutrient[idx(gx0, gy0-1)];
+        const gradA = atan2(ny, nx);
+
+        const ringFreq = 0.045;
+        const ringPhase = sin(d * ringFreq + this.no * 0.7);
+        const tangentA = atan2(this.y - origin.y, this.x - origin.x) + HALF_PI;
+        const ringPullA = lerpAngle(gradA, tangentA, params.rings * (0.5 + 0.5 * ringPhase));
+
+        const wander = (noise(this.no) - 0.5) * 0.35;
+        this.no += 0.02;
+
+        const outA = atan2(this.y - origin.y, this.x - origin.x);
+        const outward = lerpAngle(ringPullA, outA, 0.18);
+
+        this.a = lerpAngle(this.a, outward + wander, 0.35);
+
+        const sp = this.stepLen * params.speedMult;
+        this.x += cos(this.a) * sp;
+        this.y += sin(this.a) * sp;
+
+        const gx = Math.floor(this.x / gridScale);
+        const gy = Math.floor(this.y / gridScale);
+        if (gx < 0 || gy < 0 || gx >= gw || gy >= gh) { this.dead = true; return; }
+        const id = idx(gx, gy);
+
+        const eat = 0.010 + 0.010 * (1.0 - c);
+        nutrient[id] = max(0, nutrient[id] - eat);
+
+        const depAdd = (0.010 + 0.020 * (1.0 - nutrient[id])) * (0.7 + 0.6 * params.cotton);
+        deposit[id] = min(1.0, deposit[id] + depAdd);
+
+        // orange transition (delay + ramp + max + spatial bias)
+        const maturity = deposit[id]; // 0..1
+        const start = constrain(params.orangeStart, 0, 0.999);
+        const t = (maturity - start) / (1.0 - start);
+        const ramped = sigmoid(t * params.orangeRamp);
+
+        const centerFactor = 1.0 - constrain(d / plateR, 0, 1); // 1 center
+        const spatial = lerp(1.0 - centerFactor, centerFactor, params.orangeCenterBias);
+
+        const orangeDrive = params.light * params.orangeMax * ramped * spatial;
+        orange[id] = min(1.0, orange[id] + 0.015 * orangeDrive);
+
+        const canBranch = tips.length < params.maxTips && this.gen < 10;
+        if (canBranch) {
+          const frontFactor = constrain(map(d, 0, plateR, 0.35, 1.0), 0, 1);
+          const nutrFactor = constrain(map(nutrient[id], 0, 1, 0.2, 1.0), 0, 1);
+          const ageFactor = this.age < 220 ? 1.0 : 0.4;
+
+          const p = params.branchiness * frontFactor * nutrFactor * ageFactor * pow(0.78, this.gen);
+          if (random() < p) {
+            const off = random(0.15, 0.55) * (random() < 0.5 ? -1 : 1);
+            tips.push(new Tip(this.x, this.y, this.a + off, this.gen + 1));
+          }
         }
 
-        function draw() {
-            // Drawing code
+        if (nutrient[id] < 0.02 || this.age > 420) this.dead = true;
+      }
+    }
+
+    function renderPlate() {
+      pg.loadPixels();
+
+      for (let y = 0; y < gh; y++) {
+        for (let x = 0; x < gw; x++) {
+          const px = (x + 0.5) * gridScale;
+          const py = (y + 0.5) * gridScale;
+          const d = dist(px, py, origin.x, origin.y);
+          const inPlate = d <= plateR;
+
+          const dep = deposit[idx(x,y)];
+          const o = orange[idx(x,y)];
+
+          let h = 210, s = 10, b = 9;
+          if (inPlate) {
+            const mat = constrain(dep, 0, 1);
+
+            // cottony base
+            let mh = 40;
+            let ms = lerp(12, 4, mat);
+            let mb = lerp(12, 80, mat);
+
+            // orange overlay
+            const oh = params.orangeHue;
+            const os = lerp(0, 85, o);
+            const ob = lerp(0, 95, o);
+
+            mh = lerp(mh, oh, o);
+            ms = lerp(ms, os, o);
+            mb = lerp(mb, ob, o);
+
+            // subtle brightness zoning
+            const ringB = (0.06 * params.rings) * (0.5 + 0.5 * sin(d * 0.085));
+            mb = constrain(mb + 100 * ringB * (0.4 + 0.6 * mat), 0, 100);
+
+            h = mh; s = ms; b = mb;
+          }
+
+          const col = pg.color(h, s, b, 255);
+          const off = 4 * (x + y * gw);
+          pg.pixels[off + 0] = red(col);
+          pg.pixels[off + 1] = green(col);
+          pg.pixels[off + 2] = blue(col);
+          pg.pixels[off + 3] = 255;
         }
-    </script>
+      }
+
+      pg.updatePixels();
+
+      background(0, 0, 7);
+      push();
+      noSmooth();
+      image(pg, 0, 0, width, height);
+      pop();
+
+      // petri rim
+      noFill();
+      stroke(0, 0, 100, 50);
+      strokeWeight(2);
+      circle(origin.x, origin.y, plateR * 2);
+
+      stroke(0, 0, 100, 15);
+      strokeWeight(10);
+      circle(origin.x, origin.y, plateR * 2 + 8);
+
+      // inoculum marker
+      noFill();
+      stroke(0, 0, 100, 35);
+      strokeWeight(1);
+      circle(origin.x, origin.y, params.inocRadiusPx * 2);
+
+      // status
+      noStroke();
+      fill(0, 0, 100, 90);
+      textSize(12);
+      text(`tips: ${tips.length}`, 12, height - 16);
+    }
+
+    function lerpAngle(a, b, t) {
+      let d = (b - a + Math.PI * 3) % (Math.PI * 2) - Math.PI;
+      return a + d * t;
+    }
+    function sigmoid(x) { return 1 / (1 + Math.exp(-x)); }
+
+    function windowResized() {
+      if (Math.abs(window.innerWidth - lastW) > 20) {
+        const parent = document.getElementById('canvas-parent');
+        resizeCanvas(parent.clientWidth, parent.clientHeight);
+        lastW = window.innerWidth;
+        initSimulation();
+      }
+    }
+  </script>
 </body>
 </html>
